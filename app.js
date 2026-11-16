@@ -264,9 +264,40 @@ async function unlock(event) {
   } catch (err) {
     plan = null;
     error.hidden = false;
-    input.select();
+    input.value = "";
+    renderDots();
   }
 }
 
+const MAX_DIGITS = 12;
+
+function renderDots() {
+  const input = document.getElementById("passcode");
+  const dots = document.getElementById("dots");
+  dots.replaceChildren(...Array.from({ length: input.value.length }, () => el("span", { class: "filled" })));
+}
+
+function wireKeypad() {
+  const input = document.getElementById("passcode");
+  document.querySelectorAll("#keypad .key[data-key]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (input.value.length >= MAX_DIGITS) return;
+      input.value += btn.dataset.key;
+      document.getElementById("lock-error").hidden = true;
+      renderDots();
+    });
+  });
+  document.getElementById("key-back").addEventListener("click", () => {
+    input.value = input.value.slice(0, -1);
+    renderDots();
+  });
+  document.getElementById("key-clear").addEventListener("click", () => {
+    input.value = "";
+    renderDots();
+  });
+}
+
 document.getElementById("unlock-form").addEventListener("submit", unlock);
+wireKeypad();
+renderDots();
 wireTabs();
