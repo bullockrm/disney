@@ -432,6 +432,7 @@ async function unlock(event) {
 
 document.getElementById("unlock-form").addEventListener("submit", unlock);
 document.getElementById("forget").addEventListener("click", forgetDevice);
+document.getElementById("refresh").addEventListener("click", () => location.reload());
 wireKeypad();
 renderDots();
 wireTabs();

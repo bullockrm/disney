@@ -70,7 +70,7 @@ header .sub { margin: 2px 0 0; opacity: 0.9; font-size: 0.75rem; }
 .swatch[data-theme="castle"] { background: linear-gradient(135deg, #1c3d8f, #5b4fcf, #c77dff); }
 .swatch[data-theme="teal"] { background: linear-gradient(120deg, #0b3d91, #0096c7, #48cae4); }
 .swatch[aria-pressed="true"] { outline: 2px solid #ffffff; outline-offset: 2px; }
-.app-footer { text-align: center; padding: 1.5rem 1rem 2rem; }
+.app-footer { text-align: center; padding: 1.5rem 1rem 2rem; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
 .forget {
   background: transparent; color: var(--muted);
   border: 1px solid var(--line); font-size: 0.85rem; padding: 0.4rem 0.9rem;
