@@ -41,7 +41,6 @@ header .sub { margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem; }
   text-align: center;
 }
 .lock form { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
-.lock input#passcode { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .dots { display: flex; gap: 0.6rem; justify-content: center; min-height: 1rem; }
 .dots span {
   width: 0.8rem; height: 0.8rem; border-radius: 50%;
@@ -50,6 +49,7 @@ header .sub { margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem; }
 .dots span.filled { background: var(--accent); }
 .keypad {
   display: grid; grid-template-columns: repeat(3, 4.5rem); gap: 0.6rem;
+  width: fit-content; margin: 0 auto;
 }
 .key {
   width: 4.5rem; height: 4.5rem; border-radius: 50%;

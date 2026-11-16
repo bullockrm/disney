@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
   <title>Disney World Trip Plan</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -13,7 +13,7 @@
     <p>Enter the passcode to view the plan.</p>
     <form id="unlock-form">
       <div class="dots" id="dots" aria-live="polite"></div>
-      <input id="passcode" type="password" inputmode="none" autocomplete="off" aria-label="Passcode" readonly required>
+      <input id="passcode" type="password" hidden readonly autocomplete="off" aria-label="Passcode">
       <div class="keypad" id="keypad">
         <button type="button" class="key" data-key="1">1</button>
         <button type="button" class="key" data-key="2">2</button>
@@ -82,6 +82,6 @@
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
