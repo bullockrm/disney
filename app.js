@@ -26,7 +26,6 @@ const state = {
   type: "ALL",
   query: "",
   llGroup: "ALL",
-  diningStatus: "ALL",
   diningGroup: "ALL",
 };
 
@@ -252,21 +251,13 @@ function renderLightning() {
 
 function renderDining() {
   const groupChipsEl = document.getElementById("dining-group-chips");
-  const chips = document.getElementById("dining-status-chips");
   const list = document.getElementById("dining-list");
   groupChipsEl.replaceChildren();
-  chips.replaceChildren();
   list.replaceChildren();
 
   for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
     groupChipsEl.append(chip(g === "ALL" ? "All groups" : g, state.diningGroup === g, () => {
       state.diningGroup = g; renderDining();
-    }));
-  }
-  for (const s of ["ALL", "booked", "open"]) {
-    const label = s === "ALL" ? "All" : s === "booked" ? "Booked" : "Open";
-    chips.append(chip(label, state.diningStatus === s, () => {
-      state.diningStatus = s; renderDining();
     }));
   }
 
@@ -275,7 +266,6 @@ function renderDining() {
   for (const day of plan.days) {
     const meals = plan.dining.filter((d) => {
       if (d.date !== day.label) return false;
-      if (state.diningStatus !== "ALL" && d.status !== state.diningStatus) return false;
       return matchesGroup(idsFromLabel(d.who), state.diningGroup);
     });
     if (!meals.length) continue;
@@ -287,7 +277,6 @@ function renderDining() {
         el("div", { class: "label" }, d.place),
         el("div", { class: "meta" }, d.time),
         el("div", { class: "grp" }, groupChips(ids)),
-        el("span", { class: "badge " + d.status }, d.status === "open" ? "Open" : "Booked"),
         d.note ? el("div", { class: "notes" }, d.note) : null,
       ]));
     }
