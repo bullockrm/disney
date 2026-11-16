@@ -11,6 +11,7 @@ const state = {
   query: "",
   llGroup: "ALL",
   diningStatus: "ALL",
+  diningGroup: "ALL",
 };
 
 const TYPES = ["dining", "lightning", "show", "attraction", "travel"];
@@ -79,7 +80,7 @@ function groupsText(groups) {
 }
 
 function matchesGroup(groups, selected) {
-  return selected === "ALL" || groups.includes(selected);
+  return selected === "ALL" || groups.includes("ALL") || groups.includes(selected);
 }
 
 function eventCard(ev, dayLabel) {
@@ -177,25 +178,38 @@ function renderLightning() {
 }
 
 function renderDining() {
+  const groupChips = document.getElementById("dining-group-chips");
   const chips = document.getElementById("dining-status-chips");
   const list = document.getElementById("dining-list");
+  groupChips.replaceChildren();
   chips.replaceChildren();
   list.replaceChildren();
 
+  for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
+    groupChips.append(chip(g === "ALL" ? "All groups" : g, state.diningGroup === g, () => {
+      state.diningGroup = g; renderDining();
+    }));
+  }
   for (const s of ["ALL", "booked", "open"]) {
     const label = s === "ALL" ? "All" : s === "booked" ? "Booked" : "Open";
     chips.append(chip(label, state.diningStatus === s, () => {
       state.diningStatus = s; renderDining();
     }));
   }
+
+  let shown = 0;
   for (const d of plan.dining) {
     if (state.diningStatus !== "ALL" && d.status !== state.diningStatus) continue;
+    if (!matchesGroup(d.who.split(/,\s*/), state.diningGroup)) continue;
+    shown++;
     list.append(el("div", { class: "card" }, [
       el("div", { class: "label" }, d.place),
-      el("div", { class: "meta" }, `${d.date} · ${d.time} · ${d.who}`),
+      el("div", { class: "meta" }, `${d.date} · ${d.time} · ${d.who === "ALL" ? "All groups" : d.who}`),
       el("span", { class: "badge " + d.status }, d.status === "open" ? "Open" : "Booked"),
+      d.note ? el("div", { class: "notes" }, d.note) : null,
     ]));
   }
+  if (!shown) list.append(el("p", { class: "meta" }, "No dining plans match these filters."));
 }
 
 function renderTravel() {
