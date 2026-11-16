@@ -4,8 +4,18 @@
       <stop offset="0" stop-color="#2f5fb3"/>
       <stop offset="1" stop-color="#1b2340"/>
     </linearGradient>
+    <path id="spark" d="M0,-1 Q0,0 1,0 Q0,0 0,1 Q0,0 -1,0 Q0,0 0,-1 Z"/>
   </defs>
   <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-  <polygon fill="#f5c451" points="32,4 34.06,9.17 39.61,9.53 35.33,13.08 36.70,18.47 32,15.5 27.30,18.47 28.67,13.08 24.39,9.53 29.94,9.17"/>
-  <text x="32" y="54" font-family="Georgia, 'Times New Roman', serif" font-size="40" font-weight="bold" text-anchor="middle" fill="#ffffff">B</text>
+
+  <!-- script B: drawn as one continuous stroke -->
+  <path d="M30 19 C25 27 24 40 25 49 C33 53 46 52 46 44 C46 37 38 35 27 37 C37 34 43 33 42 27 C41 21 35 18 30 19"
+        fill="none" stroke="#ffffff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- sparkles -->
+  <use href="#spark" transform="translate(47 11) scale(7)" fill="#f5c451"/>
+  <use href="#spark" transform="translate(16 13) scale(4)" fill="#f5c451"/>
+  <use href="#spark" transform="translate(54 27) scale(3.2)" fill="#ffffff"/>
+  <use href="#spark" transform="translate(10 30) scale(2.4)" fill="#ffffff"/>
+  <use href="#spark" transform="translate(53 48) scale(2.6)" fill="#f5c451"/>
 </svg>
