@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="castle">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,7 @@
   <title>Disney World Trip Plan</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=4">
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -38,9 +38,18 @@
 
   <main id="app" hidden>
     <header>
-      <h1>Disney World Trip</h1>
-      <p class="sub">Sat Nov 21 to Thu Nov 26, 2026 · Caribbean Beach Resort</p>
-      <button type="button" id="forget" class="forget" hidden>Forget this device</button>
+      <div>
+        <h1>Disney World Trip</h1>
+        <p class="sub">Nov 21–26, 2026 · Caribbean Beach</p>
+      </div>
+      <div class="hdr-right">
+        <div class="swatches" role="group" aria-label="Site theme">
+          <button type="button" class="swatch" data-theme="sunset" aria-label="Sunset theme" aria-pressed="false"></button>
+          <button type="button" class="swatch" data-theme="castle" aria-label="Castle blue theme" aria-pressed="false"></button>
+          <button type="button" class="swatch" data-theme="teal" aria-label="Tomorrowland teal theme" aria-pressed="false"></button>
+        </div>
+        <button type="button" id="forget" class="forget" hidden>Forget</button>
+      </div>
     </header>
 
     <nav class="tabs" role="tablist">
@@ -87,6 +96,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

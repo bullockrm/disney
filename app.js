@@ -1,7 +1,23 @@
 // Client-side decryption. The plan is stored encrypted in data/plan.enc.json.
-// Nothing is decrypted until the passcode is entered, and nothing is saved in the browser.
+// Nothing is decrypted until the passcode is entered, and only the derived key is remembered.
 
 const ENC_URL = "data/plan.enc.json";
+const REMEMBER_KEY = "disney-plan-unlock";
+const THEME_KEY = "disney-theme";
+const THEMES = ["sunset", "castle", "teal"];
+const TYPES = ["dining", "lightning", "show", "attraction", "travel"];
+const MAX_DIGITS = 12;
+
+// Dining entries have no park field, so map the place name to its park.
+const DINING_PARK = {
+  "Tusker House": "Animal Kingdom",
+  "Garden Grill": "EPCOT",
+  "Biergarten": "EPCOT",
+  "Cinderella's Royal Table": "Magic Kingdom",
+  "Hollywood & Vine": "Hollywood Studios",
+  "Roundup Rodeo BBQ": "Magic Kingdom",
+};
+
 let plan = null;
 
 const state = {
@@ -14,7 +30,7 @@ const state = {
   diningGroup: "ALL",
 };
 
-const TYPES = ["dining", "lightning", "show", "attraction", "travel"];
+// ---------- Crypto ----------
 
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -55,8 +71,6 @@ async function decryptWithKey(key, enc) {
 
 // Remembered unlock: the raw AES key plus the salt it was derived with.
 // If the plan is re-encrypted (new salt), the remembered key is ignored.
-const REMEMBER_KEY = "disney-plan-unlock";
-
 function readRemembered(enc) {
   try {
     const saved = JSON.parse(localStorage.getItem(REMEMBER_KEY) || "null");
@@ -68,13 +82,7 @@ function readRemembered(enc) {
 }
 
 async function importRemembered(saved) {
-  return crypto.subtle.importKey(
-    "raw",
-    b64ToBytes(saved.key),
-    { name: "AES-GCM" },
-    false,
-    ["decrypt"]
-  );
+  return crypto.subtle.importKey("raw", b64ToBytes(saved.key), { name: "AES-GCM" }, false, ["decrypt"]);
 }
 
 async function rememberKey(key, enc) {
@@ -88,6 +96,8 @@ function forgetDevice() {
   localStorage.removeItem(REMEMBER_KEY);
   location.reload();
 }
+
+// ---------- Helpers ----------
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -108,24 +118,42 @@ function chip(label, active, onClick) {
   return b;
 }
 
-function groupLabel(id) {
-  if (id === "ALL") return "All";
-  const g = plan.groups.find((x) => x.id === id);
-  return g ? g.id : id;
-}
-
-function groupsText(groups) {
-  if (groups.length === plan.groups.length) return "All groups";
-  return groups.join(", ");
-}
-
 function matchesGroup(groups, selected) {
   return selected === "ALL" || groups.includes("ALL") || groups.includes(selected);
 }
 
+// Group chips with the same colors in every theme. Accepts ids such as ["LP", "RB"].
+function groupChips(ids) {
+  const all = ids.includes("ALL") || ids.length === plan.groups.length;
+  if (all) return [el("span", { class: "g ALL" }, "All")];
+  return ids.map((id) => el("span", { class: "g " + id }, id));
+}
+
+// Turns the lightning summary labels ("LP and RB", "ALL") into group ids.
+function idsFromLabel(label) {
+  return label === "ALL" ? ["ALL"] : label.split(/ and |, /);
+}
+
+// Park class from a location string, using the park that appears first in it.
+function parkClass(location) {
+  const parks = [
+    ["Magic Kingdom", "p-MK"],
+    ["EPCOT", "p-EP"],
+    ["Hollywood Studios", "p-HS"],
+    ["Animal Kingdom", "p-AK"],
+  ];
+  let best = null;
+  for (const [name, cls] of parks) {
+    const i = location ? location.indexOf(name) : -1;
+    if (i !== -1 && (best === null || i < best.i)) best = { i, cls };
+  }
+  return best ? best.cls : "p-none";
+}
+
+// ---------- Itinerary ----------
+
 function eventCard(ev, dayLabel) {
-  const classes = ["event", ev.type];
-  if (ev.status === "open") classes.push("open");
+  const classes = ["event", ev.type, parkClass(ev.location)];
   if (ev.status === "proposed") classes.push("proposed");
   const badges = [];
   if (ev.status === "open") badges.push(el("span", { class: "badge open" }, "Open"));
@@ -133,28 +161,24 @@ function eventCard(ev, dayLabel) {
   return el("div", { class: classes.join(" ") }, [
     el("div", { class: "time" }, ev.time),
     el("div", { class: "title" }, [...badges, ev.title]),
-    el("div", { class: "meta" }, [
-      ev.location ? ev.location + " · " : "",
-      groupsText(ev.groups),
-      dayLabel ? " · " + dayLabel : "",
-    ]),
+    el("div", { class: "meta" }, [ev.location || "", dayLabel ? " · " + dayLabel : ""]),
+    el("div", { class: "grp" }, groupChips(ev.groups)),
     ev.notes ? el("div", { class: "notes" }, ev.notes) : null,
   ]);
 }
 
 function renderItinerary() {
-  const groupChips = document.getElementById("group-chips");
+  const groupChipsEl = document.getElementById("group-chips");
   const dayChips = document.getElementById("day-chips");
   const typeChips = document.getElementById("type-chips");
   const days = document.getElementById("days");
-  groupChips.replaceChildren();
+  groupChipsEl.replaceChildren();
   dayChips.replaceChildren();
   typeChips.replaceChildren();
   days.replaceChildren();
 
-  const groupOpts = ["ALL", ...plan.groups.map((g) => g.id)];
-  for (const g of groupOpts) {
-    groupChips.append(chip(g === "ALL" ? "All groups" : g, state.group === g, () => {
+  for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
+    groupChipsEl.append(chip(g === "ALL" ? "All groups" : g, state.group === g, () => {
       state.group = g; renderItinerary();
     }));
   }
@@ -192,6 +216,8 @@ function renderItinerary() {
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
 }
 
+// ---------- Lightning Lanes ----------
+
 function renderLightning() {
   const chips = document.getElementById("ll-group-chips");
   const list = document.getElementById("ll-list");
@@ -204,11 +230,12 @@ function renderLightning() {
     }));
   }
   for (const item of plan.lightning) {
-    const involves = item.group === "ALL" || state.llGroup === "ALL" || item.group.split(/ and |, /).includes(state.llGroup);
+    const ids = idsFromLabel(item.group);
+    const involves = state.llGroup === "ALL" || matchesGroup(ids, state.llGroup);
     if (!involves) continue;
-    list.append(el("div", { class: "card" }, [
+    list.append(el("div", { class: "card " + parkClass(item.park) }, [
       el("div", { class: "label" }, item.park),
-      el("div", {}, item.group),
+      el("div", { class: "grp" }, groupChips(ids)),
       el("div", { class: "meta" }, item.items),
     ]));
   }
@@ -217,16 +244,18 @@ function renderLightning() {
   tips.replaceChildren(...plan.passes.map((p) => el("li", {}, p)));
 }
 
+// ---------- Dining ----------
+
 function renderDining() {
-  const groupChips = document.getElementById("dining-group-chips");
+  const groupChipsEl = document.getElementById("dining-group-chips");
   const chips = document.getElementById("dining-status-chips");
   const list = document.getElementById("dining-list");
-  groupChips.replaceChildren();
+  groupChipsEl.replaceChildren();
   chips.replaceChildren();
   list.replaceChildren();
 
   for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
-    groupChips.append(chip(g === "ALL" ? "All groups" : g, state.diningGroup === g, () => {
+    groupChipsEl.append(chip(g === "ALL" ? "All groups" : g, state.diningGroup === g, () => {
       state.diningGroup = g; renderDining();
     }));
   }
@@ -240,11 +269,13 @@ function renderDining() {
   let shown = 0;
   for (const d of plan.dining) {
     if (state.diningStatus !== "ALL" && d.status !== state.diningStatus) continue;
-    if (!matchesGroup(d.who.split(/,\s*/), state.diningGroup)) continue;
+    const ids = idsFromLabel(d.who);
+    if (!matchesGroup(ids, state.diningGroup)) continue;
     shown++;
-    list.append(el("div", { class: "card" }, [
+    list.append(el("div", { class: "card " + parkClass(DINING_PARK[d.place]) }, [
       el("div", { class: "label" }, d.place),
-      el("div", { class: "meta" }, `${d.date} · ${d.time} · ${d.who === "ALL" ? "All groups" : d.who}`),
+      el("div", { class: "meta" }, `${d.date} · ${d.time}`),
+      el("div", { class: "grp" }, groupChips(ids)),
       el("span", { class: "badge " + d.status }, d.status === "open" ? "Open" : "Booked"),
       d.note ? el("div", { class: "notes" }, d.note) : null,
     ]));
@@ -252,10 +283,12 @@ function renderDining() {
   if (!shown) list.append(el("p", { class: "meta" }, "No dining plans match these filters."));
 }
 
+// ---------- Travel & rooms ----------
+
 function renderTravel() {
   const flights = document.getElementById("flights");
   const rooms = document.getElementById("rooms");
-  flights.replaceChildren(...plan.flights.map((f) => el("div", { class: "card" }, [
+  flights.replaceChildren(...plan.flights.map((f) => el("div", { class: "card p-none" }, [
     el("div", { class: "label" }, `${f.direction}: ${f.flight}`),
     el("div", {}, f.route),
     el("div", { class: "meta" }, `Depart ${f.depart} · Arrive ${f.arrive}`),
@@ -263,11 +296,11 @@ function renderTravel() {
   ])));
 
   rooms.replaceChildren(
-    el("div", { class: "card" }, [
+    el("div", { class: "card p-none" }, [
       el("div", { class: "label" }, "Room types"),
       ...plan.rooms.types.map((t) => el("div", { class: "meta" }, `${t.group}: ${t.room}`)),
     ]),
-    el("div", { class: "card" }, [
+    el("div", { class: "card p-none" }, [
       el("div", { class: "label" }, "Requests"),
       el("div", { class: "meta" }, plan.rooms.note),
       el("ul", {}, plan.rooms.requests.map((r) => el("li", {}, r))),
@@ -288,6 +321,28 @@ function renderAll() {
   renderOpen();
 }
 
+// ---------- Theme ----------
+
+function applyTheme(name) {
+  const theme = THEMES.includes(name) ? name : "castle";
+  document.documentElement.dataset.theme = theme;
+  document.querySelectorAll(".swatch").forEach((btn) => {
+    btn.setAttribute("aria-pressed", String(btn.dataset.theme === theme));
+  });
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* storage unavailable */ }
+}
+
+function wireTheme() {
+  document.querySelectorAll(".swatch").forEach((btn) => {
+    btn.addEventListener("click", () => applyTheme(btn.dataset.theme));
+  });
+  let saved = null;
+  try { saved = localStorage.getItem(THEME_KEY); } catch { /* storage unavailable */ }
+  applyTheme(saved);
+}
+
+// ---------- Navigation and unlock ----------
+
 function wireTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -298,6 +353,32 @@ function wireTabs() {
   document.getElementById("search").addEventListener("input", (e) => {
     state.query = e.target.value;
     renderItinerary();
+  });
+}
+
+function renderDots() {
+  const input = document.getElementById("passcode");
+  const dots = document.getElementById("dots");
+  dots.replaceChildren(...Array.from({ length: input.value.length }, () => el("span", { class: "filled" })));
+}
+
+function wireKeypad() {
+  const input = document.getElementById("passcode");
+  document.querySelectorAll("#keypad .key[data-key]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (input.value.length >= MAX_DIGITS) return;
+      input.value += btn.dataset.key;
+      document.getElementById("lock-error").hidden = true;
+      renderDots();
+    });
+  });
+  document.getElementById("key-back").addEventListener("click", () => {
+    input.value = input.value.slice(0, -1);
+    renderDots();
+  });
+  document.getElementById("key-clear").addEventListener("click", () => {
+    input.value = "";
+    renderDots();
   });
 }
 
@@ -349,37 +430,10 @@ async function unlock(event) {
   }
 }
 
-const MAX_DIGITS = 12;
-
-function renderDots() {
-  const input = document.getElementById("passcode");
-  const dots = document.getElementById("dots");
-  dots.replaceChildren(...Array.from({ length: input.value.length }, () => el("span", { class: "filled" })));
-}
-
-function wireKeypad() {
-  const input = document.getElementById("passcode");
-  document.querySelectorAll("#keypad .key[data-key]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (input.value.length >= MAX_DIGITS) return;
-      input.value += btn.dataset.key;
-      document.getElementById("lock-error").hidden = true;
-      renderDots();
-    });
-  });
-  document.getElementById("key-back").addEventListener("click", () => {
-    input.value = input.value.slice(0, -1);
-    renderDots();
-  });
-  document.getElementById("key-clear").addEventListener("click", () => {
-    input.value = "";
-    renderDots();
-  });
-}
-
 document.getElementById("unlock-form").addEventListener("submit", unlock);
 document.getElementById("forget").addEventListener("click", forgetDevice);
 wireKeypad();
 renderDots();
 wireTabs();
+wireTheme();
 tryRemembered();
