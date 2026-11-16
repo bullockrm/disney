@@ -208,12 +208,16 @@ function renderItinerary() {
     });
     if (!matches.length) continue;
     shown += matches.length;
-    days.append(el("div", { class: "day" }, [
-      el("h3", {}, d.label),
-      ...matches.map((ev) => eventCard(ev)),
-    ]));
+    // Headers and cards are direct children of one list, so each sticky header
+    // stays pinned until the next day's header slides up over it.
+    days.append(dayHeader(d.label), ...matches.map((ev) => eventCard(ev)));
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
+}
+
+// Sticky date header shared by the itinerary, Lightning Lanes and dining lists.
+function dayHeader(label) {
+  return el("h3", { class: "day-h" }, label);
 }
 
 // ---------- Lightning Lanes ----------
@@ -229,16 +233,16 @@ function renderLightning() {
       state.llGroup = g; renderLightning();
     }));
   }
-  for (const item of plan.lightning) {
-    const ids = idsFromLabel(item.group);
-    const involves = state.llGroup === "ALL" || matchesGroup(ids, state.llGroup);
-    if (!involves) continue;
-    list.append(el("div", { class: "card " + parkClass(item.park) }, [
-      el("div", { class: "label" }, item.park),
-      el("div", { class: "grp" }, groupChips(ids)),
-      el("div", { class: "meta" }, item.items),
-    ]));
+  // Lightning Lanes come from the day events, so each one sits under its date.
+  let shown = 0;
+  for (const d of plan.days) {
+    const lanes = d.events.filter((ev) =>
+      ev.type === "lightning" && matchesGroup(ev.groups, state.llGroup));
+    if (!lanes.length) continue;
+    shown += lanes.length;
+    list.append(dayHeader(d.label), ...lanes.map((ev) => eventCard(ev)));
   }
+  if (!shown) list.append(el("p", { class: "meta" }, "No Lightning Lanes match this group."));
 
   const tips = document.getElementById("pass-tips");
   tips.replaceChildren(...plan.passes.map((p) => el("li", {}, p)));
@@ -266,19 +270,27 @@ function renderDining() {
     }));
   }
 
+  // Dining is grouped under each day's date header, in itinerary order.
   let shown = 0;
-  for (const d of plan.dining) {
-    if (state.diningStatus !== "ALL" && d.status !== state.diningStatus) continue;
-    const ids = idsFromLabel(d.who);
-    if (!matchesGroup(ids, state.diningGroup)) continue;
-    shown++;
-    list.append(el("div", { class: "card " + parkClass(DINING_PARK[d.place]) }, [
-      el("div", { class: "label" }, d.place),
-      el("div", { class: "meta" }, `${d.date} · ${d.time}`),
-      el("div", { class: "grp" }, groupChips(ids)),
-      el("span", { class: "badge " + d.status }, d.status === "open" ? "Open" : "Booked"),
-      d.note ? el("div", { class: "notes" }, d.note) : null,
-    ]));
+  for (const day of plan.days) {
+    const meals = plan.dining.filter((d) => {
+      if (d.date !== day.label) return false;
+      if (state.diningStatus !== "ALL" && d.status !== state.diningStatus) return false;
+      return matchesGroup(idsFromLabel(d.who), state.diningGroup);
+    });
+    if (!meals.length) continue;
+    shown += meals.length;
+    list.append(dayHeader(day.label));
+    for (const d of meals) {
+      const ids = idsFromLabel(d.who);
+      list.append(el("div", { class: "card " + parkClass(DINING_PARK[d.place]) }, [
+        el("div", { class: "label" }, d.place),
+        el("div", { class: "meta" }, d.time),
+        el("div", { class: "grp" }, groupChips(ids)),
+        el("span", { class: "badge " + d.status }, d.status === "open" ? "Open" : "Booked"),
+        d.note ? el("div", { class: "notes" }, d.note) : null,
+      ]));
+    }
   }
   if (!shown) list.append(el("p", { class: "meta" }, "No dining plans match these filters."));
 }
