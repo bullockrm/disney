@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Disney World Trip Plan</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="lock" class="lock">
+    <h1>Disney World Trip</h1>
+    <p>Enter the passcode to view the plan.</p>
+    <form id="unlock-form">
+      <input id="passcode" type="password" inputmode="numeric" autocomplete="off" aria-label="Passcode" required>
+      <button type="submit">Unlock</button>
+    </form>
+    <p id="lock-error" class="error" hidden>Wrong passcode. Try again.</p>
+  </main>
+
+  <main id="app" hidden>
+    <header>
+      <h1>Disney World Trip</h1>
+      <p class="sub">Sat Nov 21 to Thu Nov 26, 2026 · Caribbean Beach Resort</p>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="itinerary" role="tab">Itinerary</button>
+      <button class="tab" data-tab="lightning" role="tab">Lightning Lanes</button>
+      <button class="tab" data-tab="dining" role="tab">Dining</button>
+      <button class="tab" data-tab="travel" role="tab">Travel &amp; Rooms</button>
+      <button class="tab" data-tab="open" role="tab">Open Items</button>
+    </nav>
+
+    <section id="itinerary" class="panel active">
+      <div class="filters">
+        <div class="chips" id="group-chips" aria-label="Filter by group"></div>
+        <div class="chips" id="day-chips" aria-label="Filter by day"></div>
+        <div class="chips" id="type-chips" aria-label="Filter by type"></div>
+        <input id="search" type="search" placeholder="Search events, parks, notes">
+      </div>
+      <div id="days"></div>
+    </section>
+
+    <section id="lightning" class="panel">
+      <div class="chips" id="ll-group-chips" aria-label="Filter lightning lanes by group"></div>
+      <div id="ll-list"></div>
+      <h2>Pass tips</h2>
+      <ul id="pass-tips"></ul>
+    </section>
+
+    <section id="dining" class="panel">
+      <div class="chips" id="dining-status-chips" aria-label="Filter dining by status"></div>
+      <div id="dining-list"></div>
+    </section>
+
+    <section id="travel" class="panel">
+      <h2>Flights</h2>
+      <div id="flights"></div>
+      <h2>Rooms</h2>
+      <div id="rooms"></div>
+    </section>
+
+    <section id="open" class="panel">
+      <h2>Still to decide</h2>
+      <ul id="open-list"></ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
