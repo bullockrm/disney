@@ -7,7 +7,7 @@
   <title>Disney World Trip Plan</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=4">
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -30,6 +30,7 @@
         <button type="button" class="key" data-key="0">0</button>
         <button type="button" class="key key-util" id="key-back" aria-label="Delete">&#9003;</button>
       </div>
+      <label class="remember"><input type="checkbox" id="remember" checked> Remember on this device</label>
       <button type="submit" class="unlock-btn">Unlock</button>
     </form>
     <p id="lock-error" class="error" hidden>Wrong passcode. Try again.</p>
@@ -39,6 +40,7 @@
     <header>
       <h1>Disney World Trip</h1>
       <p class="sub">Sat Nov 21 to Thu Nov 26, 2026 · Caribbean Beach Resort</p>
+      <button type="button" id="forget" class="forget" hidden>Forget this device</button>
     </header>
 
     <nav class="tabs" role="tablist">
@@ -85,6 +87,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

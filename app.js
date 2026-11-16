@@ -23,22 +23,26 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
-async function decryptPlan(passcode, enc) {
-  const enc_ = new TextEncoder();
+// Derives the AES key from the passcode. The key is extractable so it can be
+// remembered on this device (as raw bytes), not the passcode itself.
+async function deriveKey(passcode, enc) {
   const baseKey = await crypto.subtle.importKey(
     "raw",
-    enc_.encode(passcode),
+    new TextEncoder().encode(passcode),
     "PBKDF2",
     false,
     ["deriveKey"]
   );
-  const key = await crypto.subtle.deriveKey(
+  return crypto.subtle.deriveKey(
     { name: "PBKDF2", salt: b64ToBytes(enc.salt), iterations: enc.iterations, hash: "SHA-256" },
     baseKey,
     { name: "AES-GCM", length: 256 },
-    false,
+    true,
     ["decrypt"]
   );
+}
+
+async function decryptWithKey(key, enc) {
   // WebCrypto expects ciphertext and tag concatenated.
   const data = b64ToBytes(enc.data);
   const tag = b64ToBytes(enc.tag);
@@ -47,6 +51,42 @@ async function decryptPlan(passcode, enc) {
   combined.set(tag, data.length);
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBytes(enc.iv) }, key, combined);
   return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// Remembered unlock: the raw AES key plus the salt it was derived with.
+// If the plan is re-encrypted (new salt), the remembered key is ignored.
+const REMEMBER_KEY = "disney-plan-unlock";
+
+function readRemembered(enc) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(REMEMBER_KEY) || "null");
+    if (!saved || saved.salt !== enc.salt) return null;
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+async function importRemembered(saved) {
+  return crypto.subtle.importKey(
+    "raw",
+    b64ToBytes(saved.key),
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"]
+  );
+}
+
+async function rememberKey(key, enc) {
+  const raw = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+  let bin = "";
+  raw.forEach((b) => (bin += String.fromCharCode(b)));
+  localStorage.setItem(REMEMBER_KEY, JSON.stringify({ salt: enc.salt, key: btoa(bin) }));
+}
+
+function forgetDevice() {
+  localStorage.removeItem(REMEMBER_KEY);
+  location.reload();
 }
 
 function el(tag, attrs = {}, children = []) {
@@ -261,22 +301,48 @@ function wireTabs() {
   });
 }
 
+function showPlan(decrypted) {
+  plan = decrypted;
+  document.getElementById("lock").hidden = true;
+  document.getElementById("app").hidden = false;
+  document.getElementById("forget").hidden = false;
+  renderAll();
+}
+
+async function loadEnc() {
+  const res = await fetch(ENC_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error("Could not load the plan.");
+  return res.json();
+}
+
+async function tryRemembered() {
+  try {
+    const enc = await loadEnc();
+    const saved = readRemembered(enc);
+    if (!saved) return;
+    const key = await importRemembered(saved);
+    showPlan(await decryptWithKey(key, enc));
+  } catch {
+    // Remembered key is stale or unreadable: fall back to the passcode screen.
+    localStorage.removeItem(REMEMBER_KEY);
+  }
+}
+
 async function unlock(event) {
   event.preventDefault();
   const input = document.getElementById("passcode");
   const error = document.getElementById("lock-error");
+  const remember = document.getElementById("remember").checked;
   error.hidden = true;
   try {
-    const res = await fetch(ENC_URL, { cache: "no-store" });
-    if (!res.ok) throw new Error("Could not load the plan.");
-    const enc = await res.json();
-    plan = await decryptPlan(input.value, enc);
-    document.getElementById("lock").hidden = true;
-    document.getElementById("app").hidden = false;
+    const enc = await loadEnc();
+    const key = await deriveKey(input.value, enc);
+    const decrypted = await decryptWithKey(key, enc);
+    if (remember) await rememberKey(key, enc);
     input.value = "";
-    renderAll();
+    renderDots();
+    showPlan(decrypted);
   } catch (err) {
-    plan = null;
     error.hidden = false;
     input.value = "";
     renderDots();
@@ -312,6 +378,8 @@ function wireKeypad() {
 }
 
 document.getElementById("unlock-form").addEventListener("submit", unlock);
+document.getElementById("forget").addEventListener("click", forgetDevice);
 wireKeypad();
 renderDots();
 wireTabs();
+tryRemembered();

@@ -60,6 +60,11 @@ header .sub { margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem; }
 .key:active { background: var(--line); }
 .key-util { font-size: 1rem; color: var(--muted); }
 .unlock-btn { width: 100%; max-width: 13rem; padding: 0.7rem; font-size: 1rem; }
+.remember { font-size: 0.9rem; color: var(--muted); display: flex; gap: 0.4rem; align-items: center; }
+.forget {
+  margin-top: 0.6rem; background: transparent; color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.6); font-size: 0.85rem; padding: 0.3rem 0.7rem;
+}
 .error { color: var(--warn); }
 
 button, input[type="search"] {
