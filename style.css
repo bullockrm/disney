@@ -61,7 +61,9 @@ header {
 .logo { flex: none; width: 36px; height: 36px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }
 header h1 { font-size: 1rem; line-height: 1.2; }
 header .sub { margin: 2px 0 0; opacity: 0.9; font-size: 0.75rem; }
-.hdr-right { display: flex; align-items: center; gap: 8px; flex: none; }
+/* Theme swatches on the first line, compact and dark mode toggles on the second. */
+.hdr-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.toggles { display: flex; gap: 6px; }
 .swatches { display: flex; gap: 6px; }
 .swatch {
   width: 22px; height: 22px; border-radius: 50%; padding: 0;
