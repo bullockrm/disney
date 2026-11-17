@@ -525,3 +525,5 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
 .disney-link:active { color: var(--accent); }
 a.forget { text-decoration: none; display: inline-flex; align-items: center; }
 #attr-search { margin: 0.25rem 0 0.5rem; }
+/* LL tag sits with the status chips at the top right of a Lightning Lane card. */
+.status .ll-tag { opacity: 1; color: var(--accent); border-color: var(--accent); padding: 2px 4px; }

@@ -255,8 +255,8 @@ function walkDay(day, groupId) {
 
 function warningText(w) {
   const where = (ev) => ev.location;
-  return `${w.group}: ${w.ev.title} (${w.ev.time}, ${where(w.ev)}) is not reachable after ` +
-    `${w.prev.title} (${where(w.prev)}). Earliest arrival is about ${clock(w.arrive)}.`;
+  return `${w.group}: ${displayTitle(w.ev)} (${w.ev.time}, ${where(w.ev)}) is not reachable after ` +
+    `${displayTitle(w.prev)} (${where(w.prev)}). Earliest arrival is about ${clock(w.arrive)}.`;
 }
 
 function dayWarnings(day) {
@@ -529,11 +529,31 @@ const ICONS = {
   resort: '<path d="M4.5 21V10.5h15V21M2.5 21h19M10 21v-4h4v4M12 10.5V3l5 1.8L12 6.6M8 13.5h1.5M14.5 13.5H16"/>',
 };
 
+// Card titles leave off the "LL" suffix; Lightning Lanes get their own tag instead.
+function displayTitle(ev) {
+  return ev.type === "lightning" ? ev.title.replace(/\s+LL$/i, "") : ev.title;
+}
+
+// The attraction a plan item is for, from the Attractions list.
+function attractionFor(ev) {
+  if (!plan || !plan.wishlist) return null;
+  const key = normName(ev.ride || displayTitle(ev));
+  if (!key) return null;
+  for (const p of plan.wishlist) {
+    for (const r of p.rides) if (normName(r.name).includes(key) || key.includes(normName(r.ride || r.name))) return r;
+  }
+  return null;
+}
+
 function iconFor(ev) {
   const t = ev.title.toLowerCase();
   if (/parade/.test(t)) return "parade";
   if (/happily ever after|luminous|fantasmic|fireworks|nighttime/.test(t)) return "fireworks";
-  if (ev.type === "lightning") return "lightning";
+  if (ev.type === "lightning") {
+    // A Lightning Lane shows the icon of what it's for: a ride, a show, a meet.
+    const r = attractionFor(ev);
+    return r && r.kind && r.kind !== "ride" ? r.kind : "ride";
+  }
   if (ev.type === "dining") return "dining";
   if (ev.type === "show") return /parade/.test(t) ? "parade" : "fireworks";
   if (ev.type === "travel") {
@@ -559,6 +579,7 @@ function eventCard(ev, extra) {
   const right = [
     ev.status === "open" ? el("span", { class: "badge open" }, "Open") : null,
     ev.status === "proposed" ? el("span", { class: "badge proposed" }, "Proposed") : null,
+    ev.type === "lightning" ? el("span", { class: "ll-tag", title: "Lightning Lane", "aria-label": "Lightning Lane" }, "LL") : null,
     isDone(ev.id) ? el("span", { class: "badge done" }, "✓ Done") : null,
     ev.type === "lightning" || ev.type === "attraction" ? waitChip(ev.ride) : null,
   ].filter(Boolean);
@@ -569,7 +590,7 @@ function eventCard(ev, extra) {
       el("span", { class: "time" }, [iconEl(iconFor(ev)), ev.time]),
       right.length ? el("span", { class: "status" }, right) : null,
     ]),
-    el("div", { class: "title" }, ev.title),
+    el("div", { class: "title" }, displayTitle(ev)),
     el("div", { class: "meta" }, ev.location || ""),
     el("div", { class: "grp" }, groupChips(ev.groups)),
     ev.meet ? el("div", { class: "notes" }, ev.meet) : null,
@@ -1102,7 +1123,7 @@ function buildCalendar() {
         `DTSTAMP:${stamp}`,
         `DTSTART:${icsStamp(d.date, start)}`,
         `DTEND:${icsStamp(d.date, end)}`,
-        `SUMMARY:${icsText(ev.title)}`,
+        `SUMMARY:${icsText(ev.type === "lightning" ? displayTitle(ev) + " (Lightning Lane)" : ev.title)}`,
         `LOCATION:${icsText(ev.location || "")}`,
         `DESCRIPTION:${icsText([ev.time, who, ev.meet, ev.notes].filter(Boolean).join(" · "))}`,
         "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${icsText(ev.title)}`, "TRIGGER:-PT15M", "END:VALARM",
@@ -1191,7 +1212,7 @@ function buildAdvice() {
       const { reached, warnings } = walkDay(day, g.id);
       for (const w of warnings) {
         add("warn", [g.id], day,
-          `Can't make ${w.ev.title} (${w.ev.time}) after ${w.prev.title}.`,
+          `Can't make ${displayTitle(w.ev)} (${w.ev.time}) after ${displayTitle(w.prev)}.`,
           `${w.prev.location} to ${w.ev.location}. Earliest arrival is about ${clock(w.arrive)}.`);
       }
 
@@ -1231,14 +1252,14 @@ function buildAdvice() {
         const start = minutes(ev.start);
         const until = ev.end ? minutes(ev.end) : start + (ev.dur || 0);
         if (start < hours.open) {
-          add("warn", ev.groups, day, `${ev.title} (${ev.time}) is before ${hours.name} opens at ${clock(hours.open)}.`);
+          add("warn", ev.groups, day, `${displayTitle(ev)} (${ev.time}) is before ${hours.name} opens at ${clock(hours.open)}.`);
         } else if (ev.type !== "show" && until > hours.close) {
-          add("warn", ev.groups, day, `${ev.title} (${ev.time}) runs past ${hours.name}'s ${clock(hours.close)} close.`);
+          add("warn", ev.groups, day, `${displayTitle(ev)} (${ev.time}) runs past ${hours.name}'s ${clock(hours.close)} close.`);
         }
       }
       // Not booked yet.
       if (ev.status === "proposed" || ev.status === "open") {
-        add("info", ev.groups, day, ev.title.replace(/\s*\(proposed[^)]*\)/i, ""),
+        add("info", ev.groups, day, displayTitle(ev).replace(/\s*\(proposed[^)]*\)/i, ""),
           [ev.status === "proposed" ? "Proposed, not booked yet" : "Still open", ev.time].filter(Boolean).join(" · "));
       }
     }
@@ -1551,7 +1572,7 @@ function openEditor(eventId, dayId) {
   const id = eventId || "x-" + crypto.getRandomValues(new Uint32Array(2)).join("");
   const split = (ev.time || "").includes(" / ");
 
-  const title = el("input", { type: "text", required: "" }); title.value = ev.title;
+  const title = el("input", { type: "text", required: "" }); title.value = original ? displayTitle(ev) : ev.title;
   const daySel = el("select", {}, plan.days.map((d) => el("option", { value: d.id }, d.label)));
   daySel.value = day.id;
   const typeSel = el("select", {}, EVENT_TYPES.map(([v, t]) => el("option", { value: v }, t)));
