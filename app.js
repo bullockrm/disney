@@ -538,6 +538,15 @@ function syncNowTab(initial) {
   if (!show && tab.classList.contains("active")) selectTab("itinerary");
 }
 
+// The day picked on the Now tab. It starts on today, or the first park day before the trip.
+function selectedDay() {
+  if (!state.timelineDay) {
+    const today = plan.days.find((d) => d.date === nowET().date);
+    state.timelineDay = (today || plan.days.find((d) => d.hours) || plan.days[0]).id;
+  }
+  return state.timelineDay;
+}
+
 function renderNow() {
   const top = document.getElementById("now-top");
   const root = document.getElementById("now-list");
@@ -548,10 +557,21 @@ function renderNow() {
   const hint = swipeHint();
   if (hint) top.append(hint);
   const now = nowET();
-  const day = plan.days.find((d) => d.date === now.date);
-  top.append(el("div", { class: "now-banner" }, `${day.label} · ${clock(now.mins)} in Orlando`));
+  const day = plan.days.find((d) => d.id === selectedDay());
+  const isToday = day.date === now.date;
+  top.append(el("div", { class: "now-banner" },
+    isToday ? `${day.label} · ${clock(now.mins)} in Orlando` : day.label));
   const hours = hoursBlock(day);
   if (hours) top.append(hours);
+
+  // Another day picked: show that day's plan instead of now and next.
+  if (!isToday) {
+    const events = day.events.filter((ev) => matchesGroup(ev.groups, state.group));
+    root.append(dayHeader(day.label));
+    if (events.length) appendDayCards(root, day, events);
+    else root.append(el("p", { class: "meta" }, "Nothing planned for this group."));
+    return;
+  }
 
   const mine = day.events.filter((ev) => matchesGroup(ev.groups, state.group));
   const current = [], next = [], anytime = [];
@@ -698,12 +718,13 @@ function renderTimeline() {
   const root = document.getElementById("timeline");
   dayChips.replaceChildren();
   root.replaceChildren();
-  if (!state.timelineDay) {
-    const today = plan.days.find((d) => d.date === nowET().date);
-    state.timelineDay = (today || plan.days.find((d) => d.hours) || plan.days[0]).id;
-  }
+  selectedDay();
   for (const d of plan.days) {
-    dayChips.append(chip(d.label, state.timelineDay === d.id, () => { state.timelineDay = d.id; renderTimeline(); }));
+    dayChips.append(chip(d.label, state.timelineDay === d.id, () => {
+      state.timelineDay = d.id;
+      renderNow();
+      renderTimeline();
+    }));
   }
   const day = plan.days.find((d) => d.id === state.timelineDay);
   const pct = (m) => ((Math.min(Math.max(m, LINE_START), LINE_END) - LINE_START) / (LINE_END - LINE_START)) * 100;
