@@ -464,6 +464,7 @@ const ICONS = {
   ride: '<path d="M2.5 18.5C5 10 7 6.5 9.5 6.5s3.5 7 6 7 3.4-3 6-6.5M2 18.5h20M6 18.5v-6M10 18.5V7M15.5 18.5v-5"/>',
   plane: '<path d="M21 15.5v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0v5l-8 5v2l8-2.5v5.5l-2 1.5V22l3.5-1 3.5 1v-1.5l-2-1.5V13z" fill="currentColor" stroke="none"/>',
   bus: '<rect x="4" y="3" width="16" height="14.5" rx="2.5"/><path d="M4 11h16M7.5 17.5V21M16.5 17.5V21"/><circle cx="8" cy="14.3" r="1" fill="currentColor"/><circle cx="16" cy="14.3" r="1" fill="currentColor"/>',
+  move: '<circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="5.5" r="2.5"/><path d="M8 18.5h6.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H16"/>',
   resort: '<path d="M4.5 21V10.5h15V21M2.5 21h19M10 21v-4h4v4M12 10.5V3l5 1.8L12 6.6M8 13.5h1.5M14.5 13.5H16"/>',
 };
 
@@ -477,12 +478,14 @@ function iconFor(ev) {
   if (ev.type === "travel") {
     if (/mears|bus|shuttle/.test(t)) return "bus";
     if (/check|resort|room/.test(t)) return "resort";
+    if (/^move|park ?hop|to (magic kingdom|epcot|hollywood studios|animal kingdom)/.test(t)) return "move";
     return "plane";
   }
   return "ride";
 }
 
 function iconEl(name) {
+  if (name === "lightning") return el("span", { class: "ev-icon ll-tag", "aria-hidden": "true" }, "LL");
   const span = el("span", { class: "ev-icon", "aria-hidden": "true" });
   span.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
   return span;
