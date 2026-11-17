@@ -11,8 +11,8 @@ const FAV_KEY = "disney-favorites";
 const HINT_KEY = "disney-swipe-hint-seen";
 const SWIPE_DISTANCE = 70;
 const THEMES = ["sunset", "castle", "teal"];
-// Itinerary type filters. Rides and shows share one filter.
-const TYPES = [["lightning", "Lightning Lanes"], ["dining", "Dining"], ["fun", "Rides & shows"], ["travel", "Travel"]];
+// Itinerary type filters. Rides and shows share one filter, named after the Attractions tab.
+const TYPES = [["lightning", "Lightning Lanes"], ["dining", "Dining"], ["fun", "Attractions"], ["travel", "Travel"]];
 const typeMatches = (ev, t) => t === "ALL" || (t === "fun" ? ev.type === "show" || ev.type === "attraction" : ev.type === t);
 const MAX_DIGITS = 12;
 const PARKS = [
