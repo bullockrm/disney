@@ -7,7 +7,9 @@
   <title>Disney World Trip Plan</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=5">
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=5">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1c3d8f">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -55,19 +57,28 @@
     </header>
 
     <nav class="tabs" role="tablist">
-      <button class="tab active" data-tab="itinerary" role="tab">Itinerary</button>
+      <button class="tab active" data-tab="now" role="tab">Now</button>
+      <button class="tab" data-tab="itinerary" role="tab">Itinerary</button>
       <button class="tab" data-tab="lightning" role="tab">Lightning Lanes</button>
       <button class="tab" data-tab="dining" role="tab">Dining</button>
+      <button class="tab" data-tab="everyone" role="tab">Where's Everyone</button>
+      <button class="tab" data-tab="wish" role="tab">Wish List</button>
       <button class="tab" data-tab="travel" role="tab">Travel &amp; Rooms</button>
       <button class="tab" data-tab="open" role="tab">Open Items</button>
     </nav>
 
-    <section id="itinerary" class="panel active">
+    <section id="now" class="panel active">
+      <div class="chips" id="now-group-chips" aria-label="Choose your group"></div>
+      <div id="now-list"></div>
+    </section>
+
+    <section id="itinerary" class="panel">
       <div class="filters">
         <div class="chips" id="group-chips" aria-label="Filter by group"></div>
         <div class="chips" id="day-chips" aria-label="Filter by day"></div>
         <div class="chips" id="type-chips" aria-label="Filter by type"></div>
         <input id="search" type="search" placeholder="Search events, parks, notes">
+        <button type="button" id="add-calendar" class="act wide">Add this group's plans to my calendar</button>
       </div>
       <div id="days"></div>
     </section>
@@ -84,6 +95,15 @@
       <div id="dining-list"></div>
     </section>
 
+    <section id="everyone" class="panel">
+      <div class="chips" id="tl-day-chips" aria-label="Choose a day"></div>
+      <div id="timeline"></div>
+    </section>
+
+    <section id="wish" class="panel">
+      <div id="wish-list"></div>
+    </section>
+
     <section id="travel" class="panel">
       <h2>Flights</h2>
       <div id="flights"></div>
@@ -94,6 +114,7 @@
     <section id="open" class="panel">
       <h2>Still to decide</h2>
       <ul id="open-list"></ul>
+      <div id="open-warnings"></div>
     </section>
   </main>
 
@@ -102,6 +123,6 @@
     <button type="button" id="forget" class="forget" hidden>Forget this device</button>
   </footer>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

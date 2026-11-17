@@ -1,0 +1,12 @@
+{
+  "name": "Disney World 2026",
+  "short_name": "Disney 2026",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#121830",
+  "theme_color": "#1c3d8f",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

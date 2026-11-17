@@ -4,30 +4,50 @@
 const ENC_URL = "data/plan.enc.json";
 const REMEMBER_KEY = "disney-plan-unlock";
 const THEME_KEY = "disney-theme";
+const GROUP_KEY = "disney-group";
+const DONE_KEY = "disney-done";
+const NOTES_KEY = "disney-notes";
 const THEMES = ["sunset", "castle", "teal"];
 const TYPES = ["dining", "lightning", "show", "attraction", "travel"];
 const MAX_DIGITS = 12;
-
-// Dining entries have no park field, so map the place name to its park.
-const DINING_PARK = {
-  "Tusker House": "Animal Kingdom",
-  "Garden Grill": "EPCOT",
-  "Biergarten": "EPCOT",
-  "Cinderella's Royal Table": "Magic Kingdom",
-  "Hollywood & Vine": "Hollywood Studios",
-  "Roundup Rodeo BBQ": "Magic Kingdom",
-};
+const PARKS = [
+  ["Magic Kingdom", "MK"],
+  ["EPCOT", "EP"],
+  ["Hollywood Studios", "HS"],
+  ["Animal Kingdom", "AK"],
+];
+// Planning assumptions for the timing checks, in minutes.
+const SAME_PARK_WALK = 10;
+const PARK_TRANSFER = 60;
+const FIXED_GRACE = 10;
+// Orlando is on Eastern Standard Time (UTC-5) for the whole trip.
+const ET_OFFSET_HOURS = 5;
+// Live standby waits for all of Walt Disney World, from ThemeParks.wiki.
+const WAITS_URL = "https://api.themeparks.wiki/v1/entity/e957da41-3552-4cf6-b636-5babc5cbc4e5/live";
 
 let plan = null;
+let waits = null; // Map of normalized ride name -> { wait, status }
+let waitsState = "idle";
 
 const state = {
-  group: "ALL",
+  group: readStore(GROUP_KEY, "ALL"),
   day: "ALL",
   type: "ALL",
   query: "",
-  llGroup: "ALL",
-  diningGroup: "ALL",
+  timelineDay: null,
 };
+
+function readStore(key, fallback) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key));
+    return v == null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+}
+function writeStore(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
+}
 
 // ---------- Crypto ----------
 
@@ -101,6 +121,7 @@ function forgetDevice() {
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
     if (k === "class") node.className = v;
     else node.setAttribute(k, v);
   }
@@ -128,59 +149,324 @@ function groupChips(ids) {
   return ids.map((id) => el("span", { class: "g " + id }, id));
 }
 
-// Turns the lightning summary labels ("LP and RB", "ALL") into group ids.
+// Turns the dining labels ("LP, RB", "ALL") into group ids.
 function idsFromLabel(label) {
   return label === "ALL" ? ["ALL"] : label.split(/ and |, /);
 }
 
-// Park class from a location string, using the park that appears first in it.
-function parkClass(location) {
-  const parks = [
-    ["Magic Kingdom", "p-MK"],
-    ["EPCOT", "p-EP"],
-    ["Hollywood Studios", "p-HS"],
-    ["Animal Kingdom", "p-AK"],
-  ];
+// The park named first in a location string, as its short code (MK, EP, HS, AK).
+function parkCode(location) {
   let best = null;
-  for (const [name, cls] of parks) {
+  for (const [name, code] of PARKS) {
     const i = location ? location.indexOf(name) : -1;
-    if (i !== -1 && (best === null || i < best.i)) best = { i, cls };
+    if (i !== -1 && (best === null || i < best.i)) best = { i, code };
   }
-  return best ? best.cls : "p-none";
+  return best ? best.code : null;
+}
+function parkClass(location) {
+  const code = parkCode(location);
+  return code ? "p-" + code : "p-none";
+}
+
+// One group filter shared by every tab and remembered on this device.
+function groupFilter(container, rerender) {
+  container.replaceChildren();
+  for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
+    container.append(chip(g === "ALL" ? "All groups" : g, state.group === g, () => {
+      state.group = g;
+      writeStore(GROUP_KEY, g);
+      renderAll();
+    }));
+  }
+}
+
+function minutes(hhmm) {
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+function clock(mins) {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+function span(mins) {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h} hr ${m} min` : `${h} hr`;
+}
+
+// Current date and time in Orlando. "?now=2026-11-22T14:10" previews another moment.
+function nowET() {
+  const preview = new URLSearchParams(location.search).get("now");
+  const m = preview && preview.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
+  if (m) return { date: m[1], mins: +m[2] * 60 + +m[3] };
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(new Date()).map((p) => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, mins: +parts.hour * 60 + +parts.minute };
+}
+
+function daysBetween(a, b) {
+  return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+}
+
+// ---------- Timing checks ----------
+
+// Walks one group's day in order and reports stops that cannot be reached in time.
+// A Lightning Lane can be used any time in its window; meals and shows have a fixed start.
+function walkDay(day, groupId) {
+  const stops = day.events.filter((ev) =>
+    ev.start && ev.type !== "travel" && ev.status !== "proposed" && ev.groups.includes(groupId));
+  const reached = [];
+  const warnings = [];
+  let free = null;
+  let prev = null;
+  for (const ev of stops) {
+    const start = minutes(ev.start);
+    const latest = ev.end ? minutes(ev.end) : start + FIXED_GRACE;
+    let arrive = start;
+    if (prev) {
+      const samePlace = (parkCode(prev.location) || prev.location) === (parkCode(ev.location) || ev.location);
+      arrive = Math.max(start, free + (samePlace ? SAME_PARK_WALK : PARK_TRANSFER));
+    }
+    if (arrive > latest) {
+      warnings.push({ ev, prev, group: groupId, arrive, latest });
+      continue;
+    }
+    reached.push({ ev, arrive, leave: arrive + (ev.dur || 0) });
+    free = arrive + (ev.dur || 0);
+    prev = ev;
+  }
+  return { reached, warnings };
+}
+
+function warningText(w) {
+  const where = (ev) => ev.location;
+  return `${w.group}: ${w.ev.title} (${w.ev.time}, ${where(w.ev)}) is not reachable after ` +
+    `${w.prev.title} (${where(w.prev)}). Earliest arrival is about ${clock(w.arrive)}.`;
+}
+
+function dayWarnings(day) {
+  const out = [];
+  for (const g of plan.groups) {
+    if (state.group !== "ALL" && state.group !== g.id) continue;
+    out.push(...walkDay(day, g.id).warnings);
+  }
+  return out;
+}
+
+function warningList(warnings) {
+  if (!warnings.length) return null;
+  return el("div", { class: "warn-box" }, [
+    el("div", { class: "warn-title" }, "Timing warnings"),
+    el("ul", {}, warnings.map((w) => el("li", {}, warningText(w)))),
+  ]);
+}
+
+// ---------- Done marks, notes, directions ----------
+
+function isDone(id) { return !!readStore(DONE_KEY, {})[id]; }
+function toggleDone(id) {
+  const done = readStore(DONE_KEY, {});
+  if (done[id]) delete done[id]; else done[id] = true;
+  writeStore(DONE_KEY, done);
+}
+function noteFor(id) { return readStore(NOTES_KEY, {})[id] || ""; }
+function saveNote(id, text) {
+  const notes = readStore(NOTES_KEY, {});
+  if (text.trim()) notes[id] = text.trim(); else delete notes[id];
+  writeStore(NOTES_KEY, notes);
+}
+
+function mapsUrl(name, location) {
+  const clean = name.replace(/\s*\(.*?\)/g, "").replace(/^(Lunch|Dinner) at /, "").replace(/ LL$/, "");
+  return "https://www.google.com/maps/search/?api=1&query=" +
+    encodeURIComponent(`${clean}, ${location}, Walt Disney World`);
+}
+
+// Done checkbox, personal note and directions link. Marks and notes stay on this device.
+function cardActions(id, name, location) {
+  const noteBox = el("textarea", { class: "note-input", rows: "2", placeholder: "Note (saved on this device)", hidden: "" });
+  noteBox.value = noteFor(id);
+  if (noteBox.value) noteBox.hidden = false;
+  noteBox.addEventListener("change", () => saveNote(id, noteBox.value));
+
+  const done = el("button", { type: "button", class: "act" + (isDone(id) ? " on" : ""), "aria-pressed": String(isDone(id)) },
+    isDone(id) ? "✓ Done" : "Done");
+  done.addEventListener("click", () => { toggleDone(id); renderAll(); });
+
+  const note = el("button", { type: "button", class: "act" }, "Note");
+  note.addEventListener("click", () => {
+    noteBox.hidden = !noteBox.hidden && !noteBox.value;
+    if (!noteBox.hidden) noteBox.focus();
+  });
+
+  const row = [done, note];
+  if (location) {
+    row.push(el("a", { class: "act", href: mapsUrl(name, location), target: "_blank", rel: "noopener" }, "Directions"));
+  }
+  return [el("div", { class: "actions" }, row), noteBox];
+}
+
+// ---------- Live waits ----------
+
+function normName(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+async function loadWaits() {
+  if (!navigator.onLine) { waitsState = "offline"; return; }
+  try {
+    const res = await fetch(WAITS_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error("bad status");
+    const data = await res.json();
+    const map = new Map();
+    for (const item of data.liveData || []) {
+      if (item.entityType !== "ATTRACTION") continue;
+      const wait = item.queue && item.queue.STANDBY ? item.queue.STANDBY.waitTime : null;
+      map.set(normName(item.name), { wait, status: item.status });
+    }
+    waits = map;
+    waitsState = "ok";
+  } catch {
+    waitsState = "failed";
+  }
+  if (plan) renderAll();
+}
+
+function waitFor(ride) {
+  if (!waits || !ride) return null;
+  const key = normName(ride);
+  for (const [name, info] of waits) if (name.includes(key)) return info;
+  return null;
+}
+
+function waitChip(ride) {
+  const info = waitFor(ride);
+  if (!info) return null;
+  if (info.status && info.status !== "OPERATING") {
+    return el("span", { class: "tag wait down" }, info.status === "DOWN" ? "Temporarily down" : "Closed now");
+  }
+  if (info.wait == null) return null;
+  return el("span", { class: "tag wait" }, `Standby ${info.wait} min`);
+}
+
+function waitsNote() {
+  const text = {
+    ok: "Standby waits are live from ThemeParks.wiki.",
+    offline: "Offline: live waits are not available.",
+    failed: "Live waits could not be loaded.",
+    idle: "",
+  }[waitsState];
+  return text ? el("p", { class: "meta" }, text) : null;
+}
+
+// ---------- Event cards ----------
+
+function eventCard(ev, extra) {
+  const classes = ["event", ev.type, parkClass(ev.location)];
+  if (ev.status === "proposed") classes.push("proposed");
+  if (isDone(ev.id)) classes.push("done");
+  const badges = [];
+  if (ev.status === "open") badges.push(el("span", { class: "badge open" }, "Open"));
+  if (ev.status === "proposed") badges.push(el("span", { class: "badge proposed" }, "Proposed"));
+  const tags = [
+    ev.kid ? el("span", { class: "tag" }, ev.kid) : null,
+    ev.type === "lightning" || ev.type === "attraction" ? waitChip(ev.ride) : null,
+  ].filter(Boolean);
+  return el("div", { class: classes.join(" ") }, [
+    extra ? el("div", { class: "countdown" }, extra) : null,
+    el("div", { class: "time" }, ev.time),
+    el("div", { class: "title" }, [...badges, ev.title]),
+    el("div", { class: "meta" }, ev.location || ""),
+    el("div", { class: "grp" }, groupChips(ev.groups)),
+    tags.length ? el("div", { class: "tags" }, tags) : null,
+    ev.meet ? el("div", { class: "notes" }, ev.meet) : null,
+    ev.notes ? el("div", { class: "notes" }, ev.notes) : null,
+    ...(ev.type === "travel" ? [] : cardActions(ev.id, ev.title, ev.location)),
+  ]);
+}
+
+// Sticky date header shared by the lists.
+function dayHeader(label) {
+  return el("h3", { class: "day-h" }, label);
+}
+
+function hoursBlock(day) {
+  if (!day.hours) return null;
+  return el("div", { class: "hours" }, day.hours.map((h) => el("div", {}, [
+    el("span", { class: "dot p-" + parkCode(h.park) }),
+    `${h.park}: ${h.hours}`,
+    h.note ? el("span", { class: "hours-note" }, ` · ${h.note}`) : null,
+  ])));
+}
+
+// ---------- Now and next ----------
+
+function renderNow() {
+  const root = document.getElementById("now-list");
+  groupFilter(document.getElementById("now-group-chips"));
+  root.replaceChildren();
+  const now = nowET();
+  const first = plan.days[0];
+  const last = plan.days[plan.days.length - 1];
+
+  if (now.date < first.date) {
+    const n = daysBetween(now.date, first.date);
+    root.append(el("div", { class: "now-banner" }, n === 1 ? "The trip starts tomorrow." : `The trip starts in ${n} days.`));
+    root.append(dayHeader("First day: " + first.label));
+    root.append(...first.events.filter((ev) => matchesGroup(ev.groups, state.group)).map((ev) => eventCard(ev)));
+    return;
+  }
+  if (now.date > last.date) {
+    root.append(el("div", { class: "now-banner" }, "The trip is over. Welcome home."));
+    return;
+  }
+
+  const day = plan.days.find((d) => d.date === now.date);
+  root.append(el("div", { class: "now-banner" }, `${day.label} · ${clock(now.mins)} in Orlando`));
+  const hours = hoursBlock(day);
+  if (hours) root.append(hours);
+  const warn = warningList(dayWarnings(day));
+  if (warn) root.append(warn);
+
+  const mine = day.events.filter((ev) => matchesGroup(ev.groups, state.group));
+  const current = [], next = [], anytime = [];
+  for (const ev of mine) {
+    if (isDone(ev.id)) continue;
+    const start = minutes(ev.start);
+    if (start == null) { anytime.push(ev); continue; }
+    const until = ev.end ? minutes(ev.end) : start + (ev.dur || 0);
+    if (now.mins < start) next.push([ev, `Starts in ${span(start - now.mins)}`]);
+    else if (now.mins <= until) {
+      current.push([ev, ev.end ? `Window open · closes in ${span(until - now.mins)}` : "Happening now"]);
+    }
+  }
+  if (current.length) root.append(dayHeader("Now"), ...current.map(([ev, t]) => eventCard(ev, t)));
+  if (next.length) {
+    root.append(dayHeader("Up next"), eventCard(...next[0]));
+    if (next.length > 1) root.append(dayHeader("Later today"), ...next.slice(1).map(([ev, t]) => eventCard(ev, t)));
+  }
+  if (anytime.length) root.append(dayHeader("Any time today"), ...anytime.map((ev) => eventCard(ev)));
+  if (!current.length && !next.length && !anytime.length) {
+    root.append(el("p", { class: "meta" }, "Nothing left on the plan today."));
+  }
 }
 
 // ---------- Itinerary ----------
 
-function eventCard(ev, dayLabel) {
-  const classes = ["event", ev.type, parkClass(ev.location)];
-  if (ev.status === "proposed") classes.push("proposed");
-  const badges = [];
-  if (ev.status === "open") badges.push(el("span", { class: "badge open" }, "Open"));
-  if (ev.status === "proposed") badges.push(el("span", { class: "badge proposed" }, "Proposed"));
-  return el("div", { class: classes.join(" ") }, [
-    el("div", { class: "time" }, ev.time),
-    el("div", { class: "title" }, [...badges, ev.title]),
-    el("div", { class: "meta" }, [ev.location || "", dayLabel ? " · " + dayLabel : ""]),
-    el("div", { class: "grp" }, groupChips(ev.groups)),
-    ev.notes ? el("div", { class: "notes" }, ev.notes) : null,
-  ]);
-}
-
 function renderItinerary() {
-  const groupChipsEl = document.getElementById("group-chips");
   const dayChips = document.getElementById("day-chips");
   const typeChips = document.getElementById("type-chips");
   const days = document.getElementById("days");
-  groupChipsEl.replaceChildren();
+  groupFilter(document.getElementById("group-chips"));
   dayChips.replaceChildren();
   typeChips.replaceChildren();
   days.replaceChildren();
 
-  for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
-    groupChipsEl.append(chip(g === "ALL" ? "All groups" : g, state.group === g, () => {
-      state.group = g; renderItinerary();
-    }));
-  }
   dayChips.append(chip("All days", state.day === "ALL", () => { state.day = "ALL"; renderItinerary(); }));
   for (const d of plan.days) {
     dayChips.append(chip(d.label, state.day === d.id, () => { state.day = d.id; renderItinerary(); }));
@@ -209,34 +495,27 @@ function renderItinerary() {
     shown += matches.length;
     // Headers and cards are direct children of one list, so each sticky header
     // stays pinned until the next day's header slides up over it.
-    days.append(dayHeader(d.label), ...matches.map((ev) => eventCard(ev)));
+    days.append(dayHeader(d.label));
+    const hours = hoursBlock(d);
+    if (hours) days.append(hours);
+    const warn = warningList(dayWarnings(d));
+    if (warn) days.append(warn);
+    days.append(...matches.map((ev) => eventCard(ev)));
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
-}
-
-// Sticky date header shared by the itinerary, Lightning Lanes and dining lists.
-function dayHeader(label) {
-  return el("h3", { class: "day-h" }, label);
 }
 
 // ---------- Lightning Lanes ----------
 
 function renderLightning() {
-  const chips = document.getElementById("ll-group-chips");
   const list = document.getElementById("ll-list");
-  chips.replaceChildren();
+  groupFilter(document.getElementById("ll-group-chips"));
   list.replaceChildren();
 
-  for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
-    chips.append(chip(g === "ALL" ? "All groups" : g, state.llGroup === g, () => {
-      state.llGroup = g; renderLightning();
-    }));
-  }
-  // Lightning Lanes come from the day events, so each one sits under its date.
   let shown = 0;
   for (const d of plan.days) {
     const lanes = d.events.filter((ev) =>
-      ev.type === "lightning" && matchesGroup(ev.groups, state.llGroup));
+      ev.type === "lightning" && matchesGroup(ev.groups, state.group));
     if (!lanes.length) continue;
     shown += lanes.length;
     list.append(dayHeader(d.label), ...lanes.map((ev) => eventCard(ev)));
@@ -250,38 +529,184 @@ function renderLightning() {
 // ---------- Dining ----------
 
 function renderDining() {
-  const groupChipsEl = document.getElementById("dining-group-chips");
   const list = document.getElementById("dining-list");
-  groupChipsEl.replaceChildren();
+  groupFilter(document.getElementById("dining-group-chips"));
   list.replaceChildren();
 
-  for (const g of ["ALL", ...plan.groups.map((x) => x.id)]) {
-    groupChipsEl.append(chip(g === "ALL" ? "All groups" : g, state.diningGroup === g, () => {
-      state.diningGroup = g; renderDining();
-    }));
-  }
-
-  // Dining is grouped under each day's date header, in itinerary order.
+  // Dining comes from the day events, grouped under each date header.
   let shown = 0;
-  for (const day of plan.days) {
-    const meals = plan.dining.filter((d) => {
-      if (d.date !== day.label) return false;
-      return matchesGroup(idsFromLabel(d.who), state.diningGroup);
-    });
+  for (const d of plan.days) {
+    const meals = d.events.filter((ev) => ev.type === "dining" && matchesGroup(ev.groups, state.group));
     if (!meals.length) continue;
     shown += meals.length;
-    list.append(dayHeader(day.label));
-    for (const d of meals) {
-      const ids = idsFromLabel(d.who);
-      list.append(el("div", { class: "card " + parkClass(DINING_PARK[d.place]) }, [
-        el("div", { class: "label" }, d.place),
-        el("div", { class: "meta" }, d.time),
-        el("div", { class: "grp" }, groupChips(ids)),
-        d.note ? el("div", { class: "notes" }, d.note) : null,
+    list.append(dayHeader(d.label), ...meals.map((ev) => eventCard(ev)));
+  }
+  if (!shown) list.append(el("p", { class: "meta" }, "No dining plans match this group."));
+}
+
+// ---------- Where is everyone ----------
+
+const LINE_START = 8 * 60;
+const LINE_END = 22 * 60;
+
+// Park blocks for one group: each reachable stop holds its park until the next stop.
+function parkBlocks(day, groupId) {
+  const stops = walkDay(day, groupId).reached
+    .map((r) => ({ ...r, code: parkCode(r.ev.location) || "RES" }));
+  const blocks = [];
+  stops.forEach((s, i) => {
+    const next = stops[i + 1];
+    let end = s.leave;
+    if (next) end = next.code === s.code ? next.arrive : Math.max(s.leave, next.arrive - PARK_TRANSFER);
+    const last = blocks[blocks.length - 1];
+    if (last && last.code === s.code && last.end >= s.arrive) last.end = Math.max(last.end, end);
+    else blocks.push({ code: s.code, start: s.arrive, end: Math.max(end, s.arrive + 15) });
+  });
+  return blocks;
+}
+
+function renderTimeline() {
+  const dayChips = document.getElementById("tl-day-chips");
+  const root = document.getElementById("timeline");
+  dayChips.replaceChildren();
+  root.replaceChildren();
+  if (!state.timelineDay) {
+    const today = plan.days.find((d) => d.date === nowET().date);
+    state.timelineDay = (today || plan.days.find((d) => d.hours) || plan.days[0]).id;
+  }
+  for (const d of plan.days) {
+    dayChips.append(chip(d.label, state.timelineDay === d.id, () => { state.timelineDay = d.id; renderTimeline(); }));
+  }
+  const day = plan.days.find((d) => d.id === state.timelineDay);
+  const pct = (m) => ((Math.min(Math.max(m, LINE_START), LINE_END) - LINE_START) / (LINE_END - LINE_START)) * 100;
+
+  const axis = el("div", { class: "tl-axis" });
+  for (let h = 8; h <= 22; h += 2) {
+    axis.append(el("span", { style: `left:${pct(h * 60)}%` }, `${h % 12 || 12}${h < 12 ? "a" : "p"}`));
+  }
+  const rows = [el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }), axis])];
+
+  const perGroup = {};
+  for (const g of plan.groups) {
+    const blocks = parkBlocks(day, g.id);
+    perGroup[g.id] = blocks;
+    const lane = el("div", { class: "tl-lane" }, blocks.map((b) => el("div", {
+      class: "tl-block p-" + b.code,
+      style: `left:${pct(b.start)}%;width:${Math.max(pct(b.end) - pct(b.start), 2)}%`,
+      title: `${clock(b.start)} – ${clock(b.end)}`,
+    }, b.code === "RES" ? "Resort" : b.code)));
+    rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, el("span", { class: "g " + g.id }, g.id)), lane]));
+  }
+
+  // Stretches when every group is in the same place.
+  const together = [];
+  let open = null;
+  for (let m = LINE_START; m <= LINE_END; m += 5) {
+    const codes = plan.groups.map((g) => (perGroup[g.id].find((b) => m >= b.start && m < b.end) || {}).code);
+    const same = codes[0] && codes.every((c) => c === codes[0]);
+    if (same && !open) open = { start: m, code: codes[0] };
+    if ((!same || m === LINE_END) && open) { together.push({ ...open, end: m }); open = null; }
+  }
+  const tLane = el("div", { class: "tl-lane" }, together.map((b) => el("div", {
+    class: "tl-block together",
+    style: `left:${pct(b.start)}%;width:${Math.max(pct(b.end) - pct(b.start), 2)}%`,
+  })));
+  rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, "All"), tLane]));
+  root.append(el("div", { class: "tl" }, rows));
+
+  root.append(el("div", { class: "tl-legend" }, [
+    ...PARKS.map(([name, code]) => el("span", {}, [el("span", { class: "dot p-" + code }), name])),
+    el("span", {}, [el("span", { class: "dot together" }), "Everyone together"]),
+  ]));
+  root.append(together.length
+    ? el("p", { class: "meta" }, "Together: " + together.map((b) => `${clock(b.start)} – ${clock(b.end)}`).join(", "))
+    : el("p", { class: "meta" }, "No stretch on this day has every group in the same place."));
+
+  const warnings = plan.groups.flatMap((g) => walkDay(day, g.id).warnings);
+  const warn = warningList(warnings);
+  if (warn) root.append(warn);
+
+  const shared = day.events.filter((ev) => ev.groups.length === plan.groups.length && ev.type !== "travel");
+  if (shared.length) root.append(dayHeader("Planned for everyone"), ...shared.map((ev) => eventCard(ev)));
+  root.append(el("p", { class: "meta" },
+    `Blocks are estimates from the plan. They assume ${PARK_TRANSFER} minutes to change parks and ${SAME_PARK_WALK} minutes between stops in one park.`));
+}
+
+// ---------- Wish list ----------
+
+function renderWish() {
+  const root = document.getElementById("wish-list");
+  root.replaceChildren();
+  const note = waitsNote();
+  if (note) root.append(note);
+  const booked = new Set(plan.days.flatMap((d) => d.events).filter((ev) => ev.ride).map((ev) => normName(ev.ride)));
+  for (const park of plan.wishlist) {
+    root.append(dayHeader(park.park));
+    for (const r of park.rides) {
+      const id = "wish-" + normName(r.name);
+      const ride = r.ride || r.name;
+      const tags = [
+        el("span", { class: "tag" }, r.kid),
+        r.pass ? el("span", { class: "tag" }, r.pass) : null,
+        booked.has(normName(ride)) ? el("span", { class: "tag" }, "Proposed in the plan") : null,
+        waitChip(ride),
+      ].filter(Boolean);
+      root.append(el("div", { class: "event " + parkClass(park.park) + (isDone(id) ? " done" : "") }, [
+        el("div", { class: "title" }, r.name),
+        el("div", { class: "tags" }, tags),
+        ...cardActions(id, r.name, park.park),
       ]));
     }
   }
-  if (!shown) list.append(el("p", { class: "meta" }, "No dining plans match these filters."));
+  root.append(el("p", { class: "meta" }, "Rides without a Lightning Lane in the plan. Check the Disney app for closures."));
+}
+
+// ---------- Calendar export ----------
+
+function icsStamp(date, mins) {
+  const d = new Date(Date.parse(date + "T00:00:00Z") + (mins + ET_OFFSET_HOURS * 60) * 60000);
+  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+function icsText(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/([,;])/g, "\\$1").replace(/\n/g, "\\n");
+}
+
+function buildCalendar() {
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Disney Trip Plan//EN", "CALSCALE:GREGORIAN"];
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  for (const d of plan.days) {
+    for (const ev of d.events) {
+      if (!ev.start || !matchesGroup(ev.groups, state.group)) continue;
+      const start = minutes(ev.start);
+      const end = ev.end ? minutes(ev.end) : start + Math.max(ev.dur || 0, 15);
+      const who = ev.groups.length === plan.groups.length ? "Everyone" : ev.groups.join(", ");
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:${ev.id}@disney-trip`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART:${icsStamp(d.date, start)}`,
+        `DTEND:${icsStamp(d.date, end)}`,
+        `SUMMARY:${icsText(ev.title)}`,
+        `LOCATION:${icsText(ev.location || "")}`,
+        `DESCRIPTION:${icsText([ev.time, who, ev.meet, ev.notes].filter(Boolean).join(" · "))}`,
+        "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${icsText(ev.title)}`, "TRIGGER:-PT15M", "END:VALARM",
+        "END:VEVENT",
+      );
+    }
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n") + "\r\n";
+}
+
+function downloadCalendar() {
+  const blob = new Blob([buildCalendar()], { type: "text/calendar" });
+  const url = URL.createObjectURL(blob);
+  const name = state.group === "ALL" ? "disney-trip.ics" : `disney-trip-${state.group}.ics`;
+  const a = el("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 // ---------- Travel & rooms ----------
@@ -312,12 +737,18 @@ function renderTravel() {
 function renderOpen() {
   const list = document.getElementById("open-list");
   list.replaceChildren(...plan.open_items.map((i) => el("li", {}, i)));
+  const warnRoot = document.getElementById("open-warnings");
+  const all = plan.days.flatMap((d) => plan.groups.flatMap((g) => walkDay(d, g.id).warnings));
+  warnRoot.replaceChildren(...(all.length ? [warningList(all)] : []));
 }
 
 function renderAll() {
+  renderNow();
   renderItinerary();
   renderLightning();
   renderDining();
+  renderTimeline();
+  renderWish();
   renderTravel();
   renderOpen();
 }
@@ -349,12 +780,14 @@ function wireTabs() {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
       document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === btn.dataset.tab));
+      window.scrollTo({ top: 0 });
     });
   });
   document.getElementById("search").addEventListener("input", (e) => {
     state.query = e.target.value;
     renderItinerary();
   });
+  document.getElementById("add-calendar").addEventListener("click", downloadCalendar);
 }
 
 function renderDots() {
@@ -385,10 +818,15 @@ function wireKeypad() {
 
 function showPlan(decrypted) {
   plan = decrypted;
+  if (state.group !== "ALL" && !plan.groups.some((g) => g.id === state.group)) state.group = "ALL";
   document.getElementById("lock").hidden = true;
   document.getElementById("app").hidden = false;
   document.getElementById("forget").hidden = false;
   renderAll();
+  loadWaits();
+  // Keep the countdowns and live waits current while the page is open.
+  setInterval(() => { if (!document.hidden) renderNow(); }, 30000);
+  setInterval(() => { if (!document.hidden) loadWaits(); }, 5 * 60000);
 }
 
 async function loadEnc() {
@@ -398,8 +836,13 @@ async function loadEnc() {
 }
 
 async function tryRemembered() {
+  let enc;
   try {
-    const enc = await loadEnc();
+    enc = await loadEnc();
+  } catch {
+    return; // Offline with nothing cached yet: stay on the passcode screen.
+  }
+  try {
     const saved = readRemembered(enc);
     if (!saved) return;
     const key = await importRemembered(saved);
@@ -429,6 +872,11 @@ async function unlock(event) {
     input.value = "";
     renderDots();
   }
+}
+
+// Offline support: the service worker keeps the last loaded copy of the site and plan.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* offline mode unavailable */ });
 }
 
 document.getElementById("unlock-form").addEventListener("submit", unlock);

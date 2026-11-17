@@ -261,3 +261,91 @@ li { margin-bottom: 0.3rem; }
 @media (min-width: 700px) {
   .filters { grid-template-columns: 1fr; }
 }
+
+/* Card extras: tags, actions, notes, done state. */
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.tag {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.tag.wait { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.tag.wait.down { border-color: var(--warn); color: var(--warn); }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.act {
+  display: inline-block;
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.act.on { background: var(--ok); border-color: var(--ok); color: #ffffff; }
+.act.wide { border-radius: 8px; padding: 0.5rem 0.75rem; text-align: center; border-color: var(--accent); color: var(--accent); }
+.note-input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.note-input[hidden] { display: none; }
+.event.done { opacity: 0.55; }
+.event.done .title { text-decoration: line-through; }
+.countdown { font-size: 0.78rem; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+
+/* Now tab, park hours, warnings. */
+.now-banner {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  background: var(--hdr);
+  color: var(--hdr-fg);
+  font-weight: 600;
+}
+.hours { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.5rem; }
+.hours-note { font-style: italic; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--park, var(--line)); margin-right: 6px; }
+.dot.together, .tl-block.together { background: #f5c451; }
+.warn-box {
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+  padding: 0.5rem 0.8rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  background: var(--card);
+}
+.warn-title { font-weight: 700; color: var(--warn); }
+.warn-box ul { margin: 0.25rem 0 0; }
+
+/* Where's everyone: one lane per group across the day. */
+.p-RES { --park: var(--g-all); }
+.tl { margin: 0.75rem 0 0.5rem; }
+.tl-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.tl-name { flex: none; width: 34px; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.tl-lane, .tl-axis { position: relative; flex: 1; height: 26px; }
+.tl-lane { background: var(--card); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.tl-axis { height: 14px; }
+.tl-axis span { position: absolute; transform: translateX(-50%); font-size: 0.65rem; color: var(--muted); }
+.tl-axis span:first-child { transform: none; }
+.tl-axis span:last-child { transform: translateX(-100%); }
+.tl-block {
+  position: absolute; top: 0; bottom: 0;
+  background: var(--park);
+  color: #ffffff;
+  font-size: 0.65rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; white-space: nowrap;
+}
+.tl-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.5rem; }
