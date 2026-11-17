@@ -286,8 +286,9 @@ function saveNote(id, text) {
 
 function mapsUrl(name, location) {
   const clean = name.replace(/\s*\(.*?\)/g, "").replace(/^(Lunch|Dinner) at /, "").replace(/ LL$/, "");
-  return "https://www.google.com/maps/search/?api=1&query=" +
-    encodeURIComponent(`${clean}, ${location}, Walt Disney World`);
+  // Apple Maps walking directions; on an iPhone this opens the Maps app.
+  return "https://maps.apple.com/?daddr=" +
+    encodeURIComponent(`${clean}, ${location}, Walt Disney World`) + "&dirflg=w";
 }
 
 // Done checkbox, personal note and directions link. Marks and notes stay on this device.
