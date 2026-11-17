@@ -382,3 +382,7 @@ li { margin-bottom: 0.3rem; }
 }
 .act.fav.on { background: #f5c451; border-color: #f5c451; color: #2a2000; }
 .tag.plan { border-color: var(--ok); color: var(--ok); font-weight: 600; }
+
+/* Section heading inside the Now tab. */
+h2.sec { font-size: 0.95rem; margin: 0.75rem 0 0.4rem; }
+.tab[hidden] { display: none; }

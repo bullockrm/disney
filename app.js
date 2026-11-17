@@ -459,32 +459,38 @@ function hoursBlock(day) {
 
 // ---------- Now and next ----------
 
+// The trip is under way from the first day through the last, on Orlando's calendar.
+function inTrip() {
+  const today = nowET().date;
+  return today >= plan.days[0].date && today <= plan.days[plan.days.length - 1].date;
+}
+
+// The Now tab only exists during the trip. Outside it, the Itinerary tab is the home tab.
+function selectTab(name) {
+  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
+}
+function syncNowTab(initial) {
+  const tab = document.querySelector('.tab[data-tab="now"]');
+  const show = inTrip();
+  const wasHidden = tab.hidden;
+  tab.hidden = !show;
+  if (show && (initial || wasHidden)) selectTab("now");
+  if (!show && tab.classList.contains("active")) selectTab("itinerary");
+}
+
 function renderNow() {
+  const top = document.getElementById("now-top");
   const root = document.getElementById("now-list");
   groupFilter(document.getElementById("now-group-chips"));
+  top.replaceChildren();
   root.replaceChildren();
+  if (!inTrip()) return;
   const now = nowET();
-  const first = plan.days[0];
-  const last = plan.days[plan.days.length - 1];
-
-  if (now.date < first.date) {
-    const n = daysBetween(now.date, first.date);
-    root.append(el("div", { class: "now-banner" }, n === 1 ? "The trip starts tomorrow." : `The trip starts in ${n} days.`));
-    root.append(dayHeader("First day: " + first.label));
-    root.append(...first.events.filter((ev) => matchesGroup(ev.groups, state.group)).map((ev) => eventCard(ev)));
-    return;
-  }
-  if (now.date > last.date) {
-    root.append(el("div", { class: "now-banner" }, "The trip is over. Welcome home."));
-    return;
-  }
-
   const day = plan.days.find((d) => d.date === now.date);
-  root.append(el("div", { class: "now-banner" }, `${day.label} · ${clock(now.mins)} in Orlando`));
+  top.append(el("div", { class: "now-banner" }, `${day.label} · ${clock(now.mins)} in Orlando`));
   const hours = hoursBlock(day);
-  if (hours) root.append(hours);
-  const warn = warningList(dayWarnings(day));
-  if (warn) root.append(warn);
+  if (hours) top.append(hours);
 
   const mine = day.events.filter((ev) => matchesGroup(ev.groups, state.group));
   const current = [], next = [], anytime = [];
@@ -689,8 +695,6 @@ function renderTimeline() {
   const warn = warningList(warnings);
   if (warn) root.append(warn);
 
-  const shared = day.events.filter((ev) => ev.groups.length === plan.groups.length && ev.type !== "travel");
-  if (shared.length) root.append(dayHeader("Planned for everyone"), ...shared.map((ev) => eventCard(ev)));
   root.append(el("p", { class: "meta" },
     `Blocks are estimates from the plan. They assume ${PARK_TRANSFER} minutes to change parks and ${SAME_PARK_WALK} minutes between stops in one park.`));
 }
@@ -851,8 +855,7 @@ function wireTheme() {
 function wireTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === btn.dataset.tab));
+      selectTab(btn.dataset.tab);
       window.scrollTo({ top: 0 });
     });
   });
@@ -904,12 +907,14 @@ function showPlan(decrypted) {
   document.getElementById("app").hidden = false;
   document.getElementById("forget").hidden = false;
   renderAll();
+  syncNowTab(true);
   loadWaits();
   // Keep the countdowns and live waits current while the page is open.
   // Skipped while a note or the search box is being typed in, so typing is not interrupted.
   setInterval(() => {
     const typing = /^(TEXTAREA|INPUT)$/.test((document.activeElement || {}).tagName || "");
     if (document.hidden || typing) return;
+    syncNowTab(false);
     renderNow();
     renderItinerary();
     renderLightning();
