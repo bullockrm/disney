@@ -938,12 +938,164 @@ function renderTravel() {
   );
 }
 
+// ---------- Advice ----------
+// Everything here is worked out from the current plan, so it updates with every edit.
+
+const OPEN_STRETCH = 150; // minutes of nothing planned worth pointing out
+
+function parkHours(day, code) {
+  const h = (day.hours || []).find((x) => parkCode(x.park) === code);
+  if (!h) return null;
+  const [a, b] = h.hours.split(/\s[–-]\s/);
+  return { name: h.park, open: minutes(to24(a)), close: minutes(to24(b)) };
+}
+
+function parkName(code) {
+  return (PARKS.find(([, c]) => c === code) || [code])[0];
+}
+
+// A few rides in a park that this group doesn't already have that day: starred ones
+// first, then shortest live wait.
+function rideIdeas(day, groupId, code) {
+  const park = plan.wishlist.find((p) => parkCode(p.park) === code);
+  if (!park) return [];
+  const have = day.events.filter((ev) => ev.ride && ev.groups.includes(groupId)).map((ev) => normName(ev.ride));
+  return park.rides
+    .filter((r) => !have.some((h) => normName(r.name).includes(h)))
+    .map((r) => ({ r, fav: isFav("wish-" + normName(r.name)), wait: (waitFor(r.ride || r.name) || {}).wait }))
+    .sort((a, b) => (b.fav - a.fav) || ((a.wait ?? 999) - (b.wait ?? 999)))
+    .slice(0, 3)
+    .map((x) => x.r.name + (x.wait != null ? ` (${x.wait} min)` : ""));
+}
+
+function buildAdvice() {
+  const items = [];
+  const add = (level, groups, day, text, detail) => items.push({ level, groups, day, text, detail });
+
+  for (const day of plan.days) {
+    for (const g of plan.groups) {
+      // Stops that can't be reached in time.
+      const { reached, warnings } = walkDay(day, g.id);
+      for (const w of warnings) {
+        add("warn", [g.id], day,
+          `Can't make ${w.ev.title} (${w.ev.time}) after ${w.prev.title}.`,
+          `${w.prev.location} to ${w.ev.location}. Earliest arrival is about ${clock(w.arrive)}.`);
+      }
+
+      // Long stretches with nothing planned during park hours.
+      const parkStops = reached.filter((r) => parkCode(r.ev.location));
+      const stretch = (from, to, code, label) => {
+        if (to - from < OPEN_STRETCH) return;
+        const ideas = rideIdeas(day, g.id, code);
+        add("tip", [g.id], day,
+          `${span(to - from)} open at ${parkName(code)}, ${label} ${clock(from)} – ${clock(to)}.`,
+          ideas.length ? "Ideas: " + ideas.join(", ") : null);
+      };
+      // Only gaps between plans: before the first and after the last are left alone.
+      parkStops.forEach((r, i) => {
+        const next = parkStops[i + 1];
+        if (!next) return;
+        const code = parkCode(r.ev.location);
+        const gapEnd = next.arrive - (parkCode(next.ev.location) === code ? 0 : PARK_TRANSFER);
+        stretch(r.leave, gapEnd, code, "from");
+      });
+
+      // A park day with no timed plans for this group.
+      const parkDay = day.events.find((ev) => !ev.start && ev.groups.includes(g.id) && parkCode(ev.location));
+      if (!parkStops.length && parkDay) {
+        const code = parkCode(parkDay.location);
+        const ideas = rideIdeas(day, g.id, code);
+        add("tip", [g.id], day, `No timed plans at ${parkName(code)} yet.`,
+          ideas.length ? "Ideas: " + ideas.join(", ") : null);
+      }
+    }
+
+    for (const ev of day.events) {
+      // Plans outside a park's hours.
+      const code = parkCode(ev.location);
+      const hours = code && ev.start ? parkHours(day, code) : null;
+      if (hours) {
+        const start = minutes(ev.start);
+        const until = ev.end ? minutes(ev.end) : start + (ev.dur || 0);
+        if (start < hours.open) {
+          add("warn", ev.groups, day, `${ev.title} (${ev.time}) is before ${hours.name} opens at ${clock(hours.open)}.`);
+        } else if (ev.type !== "show" && until > hours.close) {
+          add("warn", ev.groups, day, `${ev.title} (${ev.time}) runs past ${hours.name}'s ${clock(hours.close)} close.`);
+        }
+      }
+      // Not booked yet.
+      if (ev.status === "proposed" || ev.status === "open") {
+        add("info", ev.groups, day, ev.title.replace(/\s*\(proposed[^)]*\)/i, ""),
+          [ev.status === "proposed" ? "Proposed, not booked yet" : "Still open", ev.time].filter(Boolean).join(" · "));
+      }
+    }
+  }
+
+  // Starred rides that need a separate purchase.
+  for (const p of plan.wishlist) {
+    for (const r of p.rides) {
+      if (r.pass && isFav("wish-" + normName(r.name))) {
+        add("tip", plan.groups.map((g) => g.id), null,
+          `You starred ${r.name}. Its Lightning Lane is a Single Pass, bought separately from Multi Pass.`);
+      }
+    }
+  }
+
+  const edited = Object.keys({ ...remoteEdits, ...pendingEdits }).length;
+  if (edited) {
+    add("info", plan.groups.map((g) => g.id), null,
+      `${edited} item${edited > 1 ? "s have" : " has"} been changed from the original plan.`,
+      "Remember to make the same changes in the Disney app. Undo all edits is in the footer.");
+  }
+  // The same advice for several groups is shown once, with all their chips.
+  const merged = [];
+  for (const x of items) {
+    const same = merged.find((m) => m.level === x.level && m.day === x.day && m.text === x.text && m.detail === x.detail);
+    if (same) same.groups = [...new Set([...same.groups, ...x.groups])];
+    else merged.push({ ...x, groups: [...x.groups] });
+  }
+  const order = (g) => plan.groups.findIndex((x) => x.id === g);
+  merged.forEach((m) => m.groups.sort((a, b) => order(a) - order(b)));
+  return merged;
+}
+
 function renderOpen() {
-  const list = document.getElementById("open-list");
-  list.replaceChildren(...plan.open_items.map((i) => el("li", {}, i)));
-  const warnRoot = document.getElementById("open-warnings");
-  const all = plan.days.flatMap((d) => plan.groups.flatMap((g) => walkDay(d, g.id).warnings));
-  warnRoot.replaceChildren(...(all.length ? [warningList(all)] : []));
+  const root = document.getElementById("advice");
+  groupFilter(document.getElementById("advice-group-chips"));
+  root.replaceChildren();
+  const all = buildAdvice();
+  const items = all.filter((x) => matchesGroup(x.groups, state.group));
+
+  const count = all.filter((x) => x.level === "warn").length;
+  const badge = document.getElementById("advice-count");
+  badge.textContent = String(count);
+  badge.hidden = !count;
+
+  const sections = [
+    ["warn", "Needs attention"],
+    ["info", "Not booked or changed"],
+    ["tip", "Open time and ideas"],
+  ];
+  if (!items.some((x) => x.level === "warn")) {
+    root.append(el("div", { class: "advice-ok" }, "✓ No timing or park-hours problems in the plan."));
+  }
+  for (const [level, heading] of sections) {
+    const list = items.filter((x) => x.level === level);
+    if (!list.length) continue;
+    root.append(dayHeader(heading));
+    for (const x of list) {
+      root.append(el("div", { class: "advice-item " + level }, [
+        el("div", { class: "advice-head" }, [
+          ...(x.groups.length === plan.groups.length ? [] : groupChips(x.groups)),
+          x.day ? el("span", { class: "advice-day" }, x.day.label) : null,
+        ]),
+        el("div", { class: "advice-text" }, x.text),
+        x.detail ? el("div", { class: "meta" }, x.detail) : null,
+      ]));
+    }
+  }
+  root.append(el("p", { class: "meta" },
+    `Worked out from the current plan, assuming ${PARK_TRANSFER} minutes to change parks and ${SAME_PARK_WALK} minutes between stops in a park.`));
 }
 
 function renderAll() {

@@ -488,3 +488,22 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
 .ed-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 700; }
 .ed-btn.danger { border-color: var(--warn); color: var(--warn); }
 .swipe > .event.swipeable { -webkit-touch-callout: none; }
+
+/* Advice tab. */
+.tab-count {
+  display: inline-block; min-width: 1.1em; padding: 0 5px; margin-left: 2px; border-radius: 999px;
+  background: var(--warn); color: #ffffff; font-size: 0.7rem; font-weight: 700; line-height: 1.5; text-align: center;
+}
+.tab-count[hidden] { display: none; }
+.advice-ok { margin: 0.75rem 0; padding: 0.6rem 0.8rem; border-radius: 10px; background: var(--card); border: 1px solid var(--ok); color: var(--ok); font-weight: 600; font-size: 0.9rem; }
+.advice-item {
+  background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--muted);
+  border-radius: 10px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;
+}
+.advice-item.warn { border-left-color: var(--warn); }
+.advice-item.info { border-left-color: var(--accent); }
+.advice-item.tip { border-left-color: var(--ok); }
+.advice-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 2px; }
+.advice-head:empty { display: none; }
+.advice-day { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+.advice-text { font-size: 0.9rem; font-weight: 600; }
