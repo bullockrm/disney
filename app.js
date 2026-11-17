@@ -421,19 +421,26 @@ function appendDayCards(container, day, events) {
     container.append(...events.map((ev) => eventCard(ev)));
     return;
   }
+  const label = clock(now.mins).replace(/ (AM|PM)$/, "");
   const anyActive = events.some((ev) => isActive(ev, now.mins));
-  let dotted = anyActive;
+  let placed = false;
+  const gapMarker = () => el("div", { class: "now-gap" }, el("span", { class: "now-time" }, label));
   for (const ev of events) {
-    if (!dotted && ev.start && minutes(ev.start) > now.mins) {
-      container.append(el("div", { class: "now-dot", title: `Now: ${clock(now.mins)}` }));
-      dotted = true;
+    if (!anyActive && !placed && ev.start && minutes(ev.start) > now.mins) {
+      container.append(gapMarker());
+      placed = true;
     }
     const card = eventCard(ev);
     card.classList.add("today");
-    if (isActive(ev, now.mins)) card.classList.add("active-now");
+    if (isActive(ev, now.mins)) {
+      card.classList.add("active-now");
+      // The time is written once, beside the first card in progress.
+      if (!placed) card.append(el("span", { class: "now-time" }, label));
+      placed = true;
+    }
     container.append(card);
   }
-  if (!dotted) container.append(el("div", { class: "now-dot", title: `Now: ${clock(now.mins)}` }));
+  if (!placed) container.append(gapMarker());
 }
 
 // Sticky date header shared by the lists.

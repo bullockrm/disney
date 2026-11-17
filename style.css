@@ -364,16 +364,21 @@ li { margin-bottom: 0.3rem; }
 /* Current-time markers. */
 .tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #e02424; z-index: 1; }
 .now-label { font-size: 0.75rem; font-weight: 700; color: #e02424; margin: 0 0 0.25rem; }
-/* Today's cards leave a narrow gutter on the left for the now marker. */
-.event.today { position: relative; margin-left: 9px; }
+/* Today's cards shift right, leaving a gutter that shows the current time in red. */
+.event.today { position: relative; margin-left: 38px; }
 .event.active-now::before {
-  content: ""; position: absolute; left: -10px; top: 0; bottom: 0; width: 3px;
+  content: ""; position: absolute; left: -8px; top: 0; bottom: 0; width: 3px;
   border-radius: 2px; background: #e02424;
 }
-.now-dot { position: relative; height: 0; }
-.now-dot::before {
-  content: ""; position: absolute; left: -2px; top: -0.25rem; width: 7px; height: 7px;
-  margin-top: -3.5px; border-radius: 50%; background: #e02424;
+.now-time {
+  position: absolute; left: -39px; top: 0.55rem; width: 28px;
+  text-align: right; font-size: 0.66rem; font-weight: 700; line-height: 1; color: #e02424;
+}
+.now-gap { position: relative; height: 0; }
+.now-gap .now-time { left: -1px; top: -0.25rem; margin-top: -0.33rem; }
+.now-gap::after {
+  content: ""; position: absolute; left: 30px; top: -0.25rem; width: 7px; height: 2px;
+  margin-top: -1px; border-radius: 1px; background: #e02424;
 }
 .act.fav.on { background: #f5c451; border-color: #f5c451; color: #2a2000; }
 .tag.plan { border-color: var(--ok); color: var(--ok); font-weight: 600; }
