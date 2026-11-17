@@ -26,11 +26,15 @@ const FIXED_GRACE = 10;
 // Orlando is on Eastern Standard Time (UTC-5) for the whole trip.
 const ET_OFFSET_HOURS = 5;
 // Live standby waits for all of Walt Disney World, from ThemeParks.wiki.
+const WDW_ID = "e957da41-3552-4cf6-b636-5babc5cbc4e5";
+const DESTINATIONS_URL = "https://api.themeparks.wiki/v1/destinations";
 const WAITS_URL = "https://api.themeparks.wiki/v1/entity/e957da41-3552-4cf6-b636-5babc5cbc4e5/live";
 
 let plan = null;
 let waits = null; // Map of normalized ride name -> { wait, status }
 let waitsState = "idle";
+let showtimes = null; // Map of normalized name -> { times: [minutes], status }
+let liveHours = readStore("disney-park-hours", {}); // date -> park code -> hours from the feed
 
 const state = {
   group: readStore(GROUP_KEY, "ALL"),
@@ -415,17 +419,53 @@ async function loadWaits() {
     if (!res.ok) throw new Error("bad status");
     const data = await res.json();
     const map = new Map();
+    const shows = new Map();
     for (const item of data.liveData || []) {
+      // Today's performance times, for shows and anything else that has them.
+      const times = (item.showtimes || [])
+        .map((t) => clockFromIso(t.startTime))
+        .filter((m) => m != null)
+        .sort((a, b) => a - b);
+      if (times.length) shows.set(normName(item.name), { times, status: item.status });
       if (item.entityType !== "ATTRACTION") continue;
       const wait = item.queue && item.queue.STANDBY ? item.queue.STANDBY.waitTime : null;
       map.set(normName(item.name), { wait, status: item.status });
     }
     waits = map;
+    showtimes = shows;
     waitsState = "ok";
   } catch {
     waitsState = "failed";
   }
   if (plan) renderAll();
+}
+
+// Minutes after midnight in park time, read straight from an ISO time such as
+// "2026-11-22T14:55:00-05:00" (the feed gives Orlando's local time and offset).
+function clockFromIso(iso) {
+  const m = typeof iso === "string" && iso.match(/T(\d{2}):(\d{2})/);
+  return m ? +m[1] * 60 + +m[2] : null;
+}
+function dateFromIso(iso) {
+  return typeof iso === "string" ? iso.slice(0, 10) : null;
+}
+
+function showtimesFor(ride) {
+  if (!showtimes || !ride) return null;
+  const key = normName(ride);
+  for (const [name, info] of showtimes) if (name.includes(key)) return info;
+  return null;
+}
+
+// Today's remaining showtimes, as "Next 2:55" plus a short list.
+function showtimeInfo(ride) {
+  const info = showtimesFor(ride);
+  if (!info) return null;
+  const now = nowET().mins;
+  const left = info.times.filter((m) => m >= now - 5);
+  const fmt = (m) => clock(m).replace(" PM", "p").replace(" AM", "a");
+  if (!left.length) return { chip: "Done for today", line: null };
+  return { chip: "Next " + fmt(left[0]), line: "Today: " + left.slice(0, 6).map(fmt).join(", ") };
 }
 
 function waitFor(ride) {
@@ -574,13 +614,81 @@ function dayHeader(label, addDayId) {
   return el("h3", { class: "day-h" }, [el("span", {}, label), add]);
 }
 
+// Park hours for a day: Disney's published hours from the feed when we have them,
+// otherwise the hours entered in the plan. Covers parks in the plan's hours list
+// and any park the day's plans visit.
+function dayHours(day) {
+  const live = liveHours[day.date] || {};
+  const codes = new Set([
+    ...(day.hours || []).map((h) => parkCode(h.park)),
+    ...day.events.map((ev) => parkCode(ev.location)).filter(Boolean),
+  ]);
+  const out = [];
+  for (const code of PARKS.map(([, c]) => c)) {
+    if (!codes.has(code)) continue;
+    const l = live[code];
+    if (l && l.open != null) {
+      out.push({ code, park: parkName(code), open: l.open, close: l.close, notes: l.notes, live: true });
+      continue;
+    }
+    const h = (day.hours || []).find((x) => parkCode(x.park) === code);
+    if (!h) continue;
+    const [a, b] = h.hours.split(/\s[–-]\s/);
+    out.push({ code, park: h.park, open: minutes(to24(a)), close: minutes(to24(b)), notes: h.note ? [h.note] : [], live: false });
+  }
+  return out;
+}
+
 function hoursBlock(day) {
-  if (!day.hours) return null;
-  return el("div", { class: "hours" }, day.hours.map((h) => el("div", {}, [
-    el("span", { class: "dot p-" + parkCode(h.park) }),
-    `${h.park}: ${h.hours}`,
-    h.note ? el("span", { class: "hours-note" }, ` · ${h.note}`) : null,
+  const hours = dayHours(day);
+  if (!hours.length) return null;
+  return el("div", { class: "hours" }, hours.map((h) => el("div", {}, [
+    el("span", { class: "dot p-" + h.code }),
+    `${h.park}: ${clock(h.open)} – ${clock(h.close)}`,
+    h.notes.length ? el("span", { class: "hours-note" }, " · " + h.notes.join(" · ")) : null,
   ])));
+}
+
+// Loads Disney's published park hours for the trip dates from ThemeParks.wiki and
+// keeps them on the phone so they still show offline.
+async function loadParkHours() {
+  if (!navigator.onLine || !plan) return;
+  try {
+    const dest = await (await fetch(DESTINATIONS_URL, { cache: "no-store" })).json();
+    const wdw = (dest.destinations || []).find((d) => d.id === WDW_ID);
+    if (!wdw) return;
+    const dates = new Set(plan.days.map((d) => d.date));
+    const next = {};
+    for (const park of wdw.parks || []) {
+      const code = parkCode(park.name);
+      if (!code) continue;
+      const res = await fetch(`https://api.themeparks.wiki/v1/entity/${park.id}/schedule`, { cache: "no-store" });
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const s of data.schedule || []) {
+        const date = s.date || dateFromIso(s.openingTime);
+        if (!dates.has(date)) continue;
+        const slot = ((next[date] = next[date] || {})[code] = next[date][code] || { open: null, close: null, notes: [] });
+        const open = clockFromIso(s.openingTime);
+        let close = clockFromIso(s.closingTime);
+        if (close != null && open != null && close < open) close += 24 * 60; // after midnight
+        if (s.type === "OPERATING") {
+          slot.open = open;
+          slot.close = close;
+        } else if (open != null && close != null) {
+          const label = s.description || (s.type === "TICKETED_EVENT" ? "Ticketed event" : "Extra hours");
+          slot.notes.push(`${label} ${clock(open)} – ${clock(close % (24 * 60))}`);
+        }
+      }
+    }
+    if (Object.keys(next).length) {
+      liveHours = next;
+      writeStore("disney-park-hours", next);
+      renderAll();
+    }
+  } catch {
+    // Keep the saved or planned hours.
+  }
 }
 
 // ---------- Now and next ----------
@@ -858,6 +966,17 @@ function renderTimeline() {
 
 const ATTR_KINDS = [["ALL", "All"], ["ride", "Rides"], ["show", "Shows"], ["character", "Characters"], ["play", "Play areas"]];
 
+// Disney's official list pages for each park. Individual ride pages aren't linked
+// because their addresses can't be checked from here, and a wrong one shows an error.
+const DISNEY = "https://disneyworld.disney.go.com";
+const DISNEY_PARK_SLUG = { MK: "magic-kingdom", EP: "epcot", HS: "hollywood-studios", AK: "animal-kingdom" };
+const DISNEY_APP_URL = "https://apps.apple.com/app/id547436543";
+function disneyListUrl(park, kind) {
+  const slug = DISNEY_PARK_SLUG[parkCode(park)];
+  if (!slug) return DISNEY + "/attractions/";
+  return `${DISNEY}/${kind === "ride" ? "attractions" : "entertainment"}/${slug}/`;
+}
+
 function renderWish() {
   const root = document.getElementById("attractions-list");
   root.replaceChildren();
@@ -890,6 +1009,7 @@ function renderWish() {
     star.addEventListener("click", () => { toggleFav(id); renderWish(); });
     const detail = [showPark ? park : null, r.kid, r.about, r.pass].filter(Boolean).join(" · ");
     const kind = r.kind || "ride";
+    const showInfo = kind === "ride" ? null : showtimeInfo(ride);
     const icon = kind === "show" && /parade|cavalcade/i.test(r.name) ? "parade"
       : kind === "show" && r.timed && !/parade/i.test(r.name) && /fireworks|nighttime|luminous|happily|fantasmic/i.test(r.name + " " + r.about) ? "fireworks"
       : kind;
@@ -898,11 +1018,14 @@ function renderWish() {
         el("span", { class: "title" }, [iconEl(icon), r.name]),
         el("span", { class: "status" }, [
           isDone(id) ? el("span", { class: "badge done" }, "✓ Done") : null,
-          waitChip(ride),
+          showInfo ? el("span", { class: "tag wait" }, showInfo.chip) : waitChip(ride),
           star,
         ].filter(Boolean)),
       ]),
       el("div", { class: "meta" }, detail),
+      showInfo && showInfo.line ? el("div", { class: "showtimes" }, showInfo.line) : null,
+      el("a", { class: "disney-link", href: disneyListUrl(park, kind), target: "_blank", rel: "noopener" },
+        `${parkName(parkCode(park))} ${kind === "ride" ? "rides" : "entertainment"} on Disney ↗`),
       ...bookings.map((x) => el("div", { class: "booked" }, [
         el("span", { class: "booked-label" }, x.ev.status === "proposed" ? "Proposed for" : "In the plan for"),
         ...groupChips(x.ev.groups),
@@ -1010,10 +1133,8 @@ function renderTravel() {
 const OPEN_STRETCH = 150; // minutes of nothing planned worth pointing out
 
 function parkHours(day, code) {
-  const h = (day.hours || []).find((x) => parkCode(x.park) === code);
-  if (!h) return null;
-  const [a, b] = h.hours.split(/\s[–-]\s/);
-  return { name: h.park, open: minutes(to24(a)), close: minutes(to24(b)) };
+  const h = dayHours(day).find((x) => x.code === code);
+  return h ? { name: h.park, open: h.open, close: h.close } : null;
 }
 
 function parkName(code) {
@@ -1638,6 +1759,7 @@ function showPlan(decrypted, key) {
   renderAll();
   syncNowTab(true);
   loadWaits();
+  loadParkHours();
   startSync();
   // Keep the countdowns and live waits current while the page is open.
   // Skipped while a note or the search box is being typed in, so typing is not interrupted.

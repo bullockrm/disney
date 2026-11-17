@@ -518,3 +518,9 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
 }
 .title-row .title { display: inline-flex; align-items: flex-start; gap: 6px; }
 .title-row .title .ev-icon { margin-top: 2px; }
+
+/* Showtimes and Disney links on attraction cards. */
+.showtimes { font-size: 0.8rem; font-weight: 600; color: var(--accent); margin-top: 3px; }
+.disney-link { display: inline-block; margin-top: 5px; font-size: 0.75rem; color: var(--muted); text-decoration: none; }
+.disney-link:active { color: var(--accent); }
+a.forget { text-decoration: none; display: inline-flex; align-items: center; }
