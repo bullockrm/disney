@@ -1337,6 +1337,19 @@ const DEFAULT_DUR = { lightning: 20, dining: 75, show: 20, attraction: 30, trave
 
 let basePlan = null;
 let planKey = null;
+// Shared edits use their own key, stored inside the encrypted plan, so they stay
+// readable when the plan file is updated. Saved edits are marked version 2.
+let syncKey = null;
+const SYNC_VERSION = 2;
+
+async function readEdits(data) {
+  if (!data || data.v !== SYNC_VERSION) return {}; // older format: unreadable, replaced on next save
+  try {
+    return (await decryptWithKey(syncKey, data)).events || {};
+  } catch {
+    return {};
+  }
+}
 let remoteEdits = {};
 let pendingEdits = readStore(PENDING_KEY, {});
 let fb = null;
@@ -1412,7 +1425,8 @@ function renderSyncStatus() {
 
 async function startSync() {
   renderSyncStatus();
-  if (!basePlan.sync_id) { syncState = "error"; renderSyncStatus(); return; }
+  if (!basePlan.sync_id || !basePlan.sync_key) { syncState = "error"; syncError = "no sync key"; renderSyncStatus(); return; }
+  syncKey = await crypto.subtle.importKey("raw", b64ToBytes(basePlan.sync_key), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
   try {
     fb = await import("./vendor/firebase.js?v=1");
     const app = fb.initializeApp(FIREBASE_CONFIG);
@@ -1427,7 +1441,7 @@ async function startSync() {
     syncRef = fb.doc(db, "plans", basePlan.sync_id);
     fb.onSnapshot(syncRef, { includeMetadataChanges: true }, async (snap) => {
       try {
-        remoteEdits = snap.exists() ? (await decryptWithKey(planKey, snap.data())).events || {} : {};
+        remoteEdits = snap.exists() ? await readEdits(snap.data()) : {};
       } catch {
         remoteEdits = {};
       }
@@ -1461,8 +1475,8 @@ async function flushEdits() {
     if (syncState !== "offline") { syncState = "saving"; renderSyncStatus(); }
     await withTimeout(fb.runTransaction(syncRef.firestore, async (tx) => {
       const snap = await tx.get(syncRef);
-      const current = snap.exists() ? (await decryptWithKey(planKey, snap.data())).events || {} : {};
-      const sealed = await encryptWithKey(planKey, { events: { ...current, ...sending } });
+      const current = snap.exists() ? await readEdits(snap.data()) : {};
+      const sealed = { ...(await encryptWithKey(syncKey, { events: { ...current, ...sending } })), v: SYNC_VERSION };
       tx.set(syncRef, { ...sealed, updated: fb.serverTimestamp() });
     }), 15000);
     for (const [id, ev] of Object.entries(sending)) {
@@ -1497,7 +1511,7 @@ async function resetEdits() {
   writeStore(PENDING_KEY, pendingEdits);
   if (syncRef) {
     try {
-      const sealed = await encryptWithKey(planKey, { events: {} });
+      const sealed = { ...(await encryptWithKey(syncKey, { events: {} })), v: SYNC_VERSION };
       await withTimeout(fb.runTransaction(syncRef.firestore, async (tx) => {
         await tx.get(syncRef);
         tx.set(syncRef, { ...sealed, updated: fb.serverTimestamp() });
