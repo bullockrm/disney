@@ -1225,7 +1225,7 @@ function buildAdvice() {
   if (edited) {
     add("info", plan.groups.map((g) => g.id), null,
       `${edited} item${edited > 1 ? "s have" : " has"} been changed from the original plan.`,
-      "Remember to make the same changes in the Disney app. Undo all edits is in the footer.");
+      "Remember to make the same changes in the Disney app.");
   }
   // The same advice for several groups is shown once, with all their chips.
   const merged = [];
@@ -1815,6 +1815,7 @@ function showPlan(decrypted, key) {
   document.getElementById("forget").hidden = false;
   renderAll();
   syncNowTab(true);
+  if (new URLSearchParams(location.search).has("undo-edits")) openResetConfirm();
   loadWaits();
   loadParkHours();
   startSync();
@@ -1884,7 +1885,8 @@ if ("serviceWorker" in navigator) {
 document.getElementById("unlock-form").addEventListener("submit", unlock);
 document.getElementById("forget").addEventListener("click", forgetDevice);
 document.getElementById("refresh").addEventListener("click", () => location.reload());
-document.getElementById("reset-edits").addEventListener("click", openResetConfirm);
+// No button for undoing all edits. Opening the site with ?undo-edits shows the
+// confirmation, for when undoing everything is really wanted.
 document.getElementById("sync-status").addEventListener("click", () => { if (syncState === "error") flushEdits(); });
 wireKeypad();
 renderDots();

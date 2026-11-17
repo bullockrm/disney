@@ -474,7 +474,10 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
   padding: 0.45rem 0.55rem; border: 1px solid var(--line); border-radius: 8px;
   background: var(--card); color: var(--ink);
 }
-.ed-row { display: flex; gap: 0.6rem; }
+.ed-row { display: flex; flex-wrap: wrap; column-gap: 0.6rem; }
+.ed-row > .ed-field { flex: 1 1 130px; }
+/* iOS gives time fields a wide built-in size; let them shrink to their column. */
+.ed-field input[type="time"] { min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; min-height: 2.4rem; }
 .ed-groups { display: flex; gap: 0.9rem; }
 .ed-group { display: flex; align-items: center; gap: 5px; }
 .ed-group input, .ed-check input { width: 18px; height: 18px; margin: 0; }
