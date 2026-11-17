@@ -839,11 +839,19 @@ function wireTabs() {
 function renderDots() {
   const input = document.getElementById("passcode");
   const dots = document.getElementById("dots");
-  dots.replaceChildren(...Array.from({ length: input.value.length }, () => el("span", { class: "filled" })));
+  dots.replaceChildren(...(input.value.length
+    ? Array.from({ length: input.value.length }, () => el("span", { class: "filled" }))
+    : [el("em", {}, "Tap to type, or use the keypad")]));
 }
 
 function wireKeypad() {
   const input = document.getElementById("passcode");
+  // Typing works too: tapping the field opens the numeric keyboard on a phone.
+  input.addEventListener("input", () => {
+    input.value = input.value.replace(/\D/g, "").slice(0, MAX_DIGITS);
+    document.getElementById("lock-error").hidden = true;
+    renderDots();
+  });
   document.querySelectorAll("#keypad .key[data-key]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (input.value.length >= MAX_DIGITS) return;

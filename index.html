@@ -9,15 +9,17 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=5">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1c3d8f">
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
   <main id="lock" class="lock">
     <h1>Disney World Trip</h1>
     <p>Enter the passcode to view the plan.</p>
     <form id="unlock-form">
-      <div class="dots" id="dots" aria-live="polite"></div>
-      <input id="passcode" type="password" hidden readonly autocomplete="off" aria-label="Passcode">
+      <label class="code-field">
+        <span class="dots" id="dots" aria-hidden="true"></span>
+        <input id="passcode" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" autofocus aria-label="Passcode">
+      </label>
       <div class="keypad" id="keypad">
         <button type="button" class="key" data-key="1">1</button>
         <button type="button" class="key" data-key="2">2</button>
@@ -123,6 +125,6 @@
     <button type="button" id="forget" class="forget" hidden>Forget this device</button>
   </footer>
 
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>

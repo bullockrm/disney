@@ -89,7 +89,18 @@ header .sub { margin: 2px 0 0; opacity: 0.9; font-size: 0.75rem; }
   text-align: center;
 }
 .lock form { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
-.dots { display: flex; gap: 0.6rem; justify-content: center; min-height: 1rem; }
+/* The dots sit on top of a real, invisible input, so tapping them opens the keyboard. */
+.code-field {
+  position: relative; display: block; width: 100%; max-width: 15rem; margin: 0 auto;
+  padding: 0.7rem 0.5rem; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+}
+.code-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.code-field input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; border: 0; margin: 0; padding: 0; font-size: 16px;
+}
+.dots em { font-style: normal; font-size: 0.8rem; color: var(--muted); }
+.dots { display: flex; gap: 0.6rem; justify-content: center; align-items: center; min-height: 1rem; }
 .dots span { width: 0.8rem; height: 0.8rem; border-radius: 50%; border: 2px solid var(--accent); }
 .dots span.filled { background: var(--accent); }
 .keypad { display: grid; grid-template-columns: repeat(3, 4.5rem); gap: 0.6rem; width: fit-content; margin: 0 auto; }
