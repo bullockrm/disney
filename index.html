@@ -14,9 +14,10 @@
       const m = localStorage.getItem("disney-mode");
       const dark = m ? m === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
       if (dark) document.documentElement.dataset.mode = "dark";
+      if (localStorage.getItem("disney-compact") === "1") document.documentElement.dataset.compact = "1";
     } catch (e) { /* storage unavailable */ }
   </script>
-  <link rel="stylesheet" href="style.css?v=28">
+  <link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -61,6 +62,7 @@
           <button type="button" class="swatch" data-theme="sunset" aria-label="Sunset theme" aria-pressed="false"></button>
           <button type="button" class="swatch" data-theme="castle" aria-label="Castle blue theme" aria-pressed="false"></button>
           <button type="button" class="swatch" data-theme="teal" aria-label="Tomorrowland teal theme" aria-pressed="false"></button>
+          <button type="button" class="mode-toggle" id="compact-toggle" aria-label="Compact cards" aria-pressed="false">☰</button>
           <button type="button" class="mode-toggle" id="mode-toggle" aria-label="Dark mode" aria-pressed="false">☾</button>
         </div>
       </div>
@@ -69,8 +71,6 @@
     <nav class="tabs" role="tablist">
       <button class="tab" data-tab="now" role="tab" hidden>Now</button>
       <button class="tab active" data-tab="itinerary" role="tab">Itinerary</button>
-      <button class="tab" data-tab="lightning" role="tab">Lightning Lanes</button>
-      <button class="tab" data-tab="dining" role="tab">Dining</button>
       <button class="tab" data-tab="attractions" role="tab">Attractions</button>
       <button class="tab" data-tab="travel" role="tab">Travel &amp; Rooms</button>
       <button class="tab" data-tab="open" role="tab">Advice <span class="tab-count" id="advice-count" hidden></span></button>
@@ -96,18 +96,6 @@
         <button type="button" id="add-calendar" class="act wide">Add this group's plans to my calendar</button>
       </div>
       <div id="days"></div>
-    </section>
-
-    <section id="lightning" class="panel">
-      <div class="chips" id="ll-group-chips" aria-label="Filter lightning lanes by group"></div>
-      <div id="ll-list"></div>
-      <h2>Pass tips</h2>
-      <ul id="pass-tips"></ul>
-    </section>
-
-    <section id="dining" class="panel">
-      <div class="chips" id="dining-group-chips" aria-label="Filter dining by group"></div>
-      <div id="dining-list"></div>
     </section>
 
     <section id="attractions" class="panel">
@@ -138,6 +126,6 @@
     <button type="button" id="forget" class="forget" hidden>Forget this device</button>
   </footer>
 
-  <script src="app.js?v=34"></script>
+  <script src="app.js?v=36"></script>
 </body>
 </html>

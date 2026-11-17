@@ -527,3 +527,25 @@ a.forget { text-decoration: none; display: inline-flex; align-items: center; }
 #attr-search { margin: 0.25rem 0 0.5rem; }
 /* LL tag sits with the status chips at the top right of a Lightning Lane card. */
 .status .ll-tag { opacity: 1; color: var(--accent); border-color: var(--accent); padding: 2px 4px; }
+
+/* Alert on a card whose timing problem is listed on the Advice tab. */
+.advice-alert {
+  font: inherit; font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+  border: 1px solid var(--warn); background: transparent; color: var(--warn); cursor: pointer;
+}
+.tips { margin: 0.25rem 0 0.75rem; padding-left: 1.2rem; font-size: 0.9rem; }
+#compact-toggle[aria-pressed="true"] { background: rgba(255, 255, 255, 0.85); color: #1c2340; }
+
+/* Compact mode: one short block per card. Park color stays on the left edge. */
+html[data-compact] .event { padding: 0.4rem 0.65rem; }
+html[data-compact] .event .meta,
+html[data-compact] .event .notes,
+html[data-compact] .event .note-input:not(:focus),
+html[data-compact] .event .disney-link,
+html[data-compact] .event .booked,
+html[data-compact] .event .showtimes { display: none; }
+html[data-compact] .event .title { display: inline; font-size: 0.95rem; }
+html[data-compact] .event .grp { display: inline-flex; margin: 0 0 0 6px; vertical-align: 1px; }
+html[data-compact] .event .time-row { margin-bottom: 1px; }
+html[data-compact] .event .grp .g { font-size: 0.65rem; padding: 0 6px; }
+html[data-compact] .swipe { margin-bottom: 0.35rem; }

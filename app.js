@@ -11,7 +11,9 @@ const FAV_KEY = "disney-favorites";
 const HINT_KEY = "disney-swipe-hint-seen";
 const SWIPE_DISTANCE = 70;
 const THEMES = ["sunset", "castle", "teal"];
-const TYPES = ["dining", "lightning", "show", "attraction", "travel"];
+// Itinerary type filters. Rides and shows share one filter.
+const TYPES = [["lightning", "Lightning Lanes"], ["dining", "Dining"], ["fun", "Rides & shows"], ["travel", "Travel"]];
+const typeMatches = (ev, t) => t === "ALL" || (t === "fun" ? ev.type === "show" || ev.type === "attraction" : ev.type === t);
 const MAX_DIGITS = 12;
 const PARKS = [
   ["Magic Kingdom", "MK"],
@@ -257,15 +259,6 @@ function warningText(w) {
   const where = (ev) => ev.location;
   return `${w.group}: ${displayTitle(w.ev)} (${w.ev.time}, ${where(w.ev)}) is not reachable after ` +
     `${displayTitle(w.prev)} (${where(w.prev)}). Earliest arrival is about ${clock(w.arrive)}.`;
-}
-
-function dayWarnings(day) {
-  const out = [];
-  for (const g of plan.groups) {
-    if (state.group !== "ALL" && state.group !== g.id) continue;
-    out.push(...walkDay(day, g.id).warnings);
-  }
-  return out;
 }
 
 function warningList(warnings) {
@@ -531,7 +524,9 @@ const ICONS = {
 
 // Card titles leave off the "LL" suffix; Lightning Lanes get their own tag instead.
 function displayTitle(ev) {
-  return ev.type === "lightning" ? ev.title.replace(/\s+LL$/i, "") : ev.title;
+  // The Proposed badge already says it, so "(proposed, not booked)" is left off too.
+  const t = ev.title.replace(/\s*\(proposed[^)]*\)/i, "");
+  return ev.type === "lightning" ? t.replace(/\s+LL$/i, "") : t;
 }
 
 // The attraction a plan item is for, from the Attractions list.
@@ -581,6 +576,7 @@ function eventCard(ev, extra) {
     ev.status === "proposed" ? el("span", { class: "badge proposed" }, "Proposed") : null,
     ev.type === "lightning" ? el("span", { class: "ll-tag", title: "Lightning Lane", "aria-label": "Lightning Lane" }, "LL") : null,
     isDone(ev.id) ? el("span", { class: "badge done" }, "✓ Done") : null,
+    adviceAlert(ev),
     ev.type === "lightning" || ev.type === "attraction" ? waitChip(ev.ride) : null,
   ].filter(Boolean);
   const travel = ev.type === "travel";
@@ -823,8 +819,8 @@ function renderItinerary() {
     dayChips.append(chip(d.label, state.day === d.id, () => { state.day = d.id; renderItinerary(); }));
   }
   typeChips.append(chip("All types", state.type === "ALL", () => { state.type = "ALL"; renderItinerary(); }));
-  for (const t of TYPES) {
-    typeChips.append(chip(t[0].toUpperCase() + t.slice(1), state.type === t, () => {
+  for (const [t, label] of TYPES) {
+    typeChips.append(chip(label, state.type === t, () => {
       state.type = t; renderItinerary();
     }));
   }
@@ -837,7 +833,7 @@ function renderItinerary() {
     if (state.day !== "ALL" && state.day !== d.id) continue;
     const matches = d.events.filter((ev) => {
       if (!matchesGroup(ev.groups, state.group)) return false;
-      if (state.type !== "ALL" && ev.type !== state.type) return false;
+      if (!typeMatches(ev, state.type)) return false;
       if (q) {
         const hay = [ev.title, ev.location, ev.notes, ev.time].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -851,56 +847,9 @@ function renderItinerary() {
     days.append(dayHeader(d.label, d.id));
     const hours = hoursBlock(d);
     if (hours) days.append(hours);
-    const warn = warningList(dayWarnings(d));
-    if (warn) days.append(warn);
     appendDayCards(days, d, matches);
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
-}
-
-// ---------- Lightning Lanes ----------
-
-function renderLightning() {
-  const list = document.getElementById("ll-list");
-  groupFilter(document.getElementById("ll-group-chips"));
-  list.replaceChildren();
-  const hint = swipeHint();
-  if (hint) list.append(hint);
-
-  let shown = 0;
-  for (const d of plan.days) {
-    const lanes = d.events.filter((ev) =>
-      ev.type === "lightning" && matchesGroup(ev.groups, state.group));
-    if (!lanes.length) continue;
-    shown += lanes.length;
-    list.append(dayHeader(d.label));
-    appendDayCards(list, d, lanes);
-  }
-  if (!shown) list.append(el("p", { class: "meta" }, "No Lightning Lanes match this group."));
-
-  const tips = document.getElementById("pass-tips");
-  tips.replaceChildren(...plan.passes.map((p) => el("li", {}, p)));
-}
-
-// ---------- Dining ----------
-
-function renderDining() {
-  const list = document.getElementById("dining-list");
-  groupFilter(document.getElementById("dining-group-chips"));
-  list.replaceChildren();
-  const hint = swipeHint();
-  if (hint) list.append(hint);
-
-  // Dining comes from the day events, grouped under each date header.
-  let shown = 0;
-  for (const d of plan.days) {
-    const meals = d.events.filter((ev) => ev.type === "dining" && matchesGroup(ev.groups, state.group));
-    if (!meals.length) continue;
-    shown += meals.length;
-    list.append(dayHeader(d.label));
-    appendDayCards(list, d, meals);
-  }
-  if (!shown) list.append(el("p", { class: "meta" }, "No dining plans match this group."));
 }
 
 // ---------- Where is everyone ----------
@@ -990,9 +939,6 @@ function renderTimeline() {
     ? el("p", { class: "meta" }, "Together: " + together.map((b) => `${clock(b.start)} – ${clock(b.end)}`).join(", "))
     : el("p", { class: "meta" }, "No stretch on this day has every group in the same place."));
 
-  const warnings = plan.groups.flatMap((g) => walkDay(day, g.id).warnings);
-  const warn = warningList(warnings);
-  if (warn) root.append(warn);
 
   root.append(el("p", { class: "meta" },
     `Blocks are estimates from the plan. They assume ${PARK_TRANSFER} minutes to change parks and ${SAME_PARK_WALK} minutes between stops in one park.`));
@@ -1204,7 +1150,7 @@ function rideIdeas(day, groupId, code) {
 
 function buildAdvice() {
   const items = [];
-  const add = (level, groups, day, text, detail) => items.push({ level, groups, day, text, detail });
+  const add = (level, groups, day, text, detail, ids = []) => items.push({ level, groups, day, text, detail, ids });
 
   for (const day of plan.days) {
     for (const g of plan.groups) {
@@ -1213,7 +1159,7 @@ function buildAdvice() {
       for (const w of warnings) {
         add("warn", [g.id], day,
           `Can't make ${displayTitle(w.ev)} (${w.ev.time}) after ${displayTitle(w.prev)}.`,
-          `${w.prev.location} to ${w.ev.location}. Earliest arrival is about ${clock(w.arrive)}.`);
+          `${w.prev.location} to ${w.ev.location}. Earliest arrival is about ${clock(w.arrive)}.`, [w.ev.id]);
       }
 
       // Long stretches with nothing planned during park hours.
@@ -1252,9 +1198,9 @@ function buildAdvice() {
         const start = minutes(ev.start);
         const until = ev.end ? minutes(ev.end) : start + (ev.dur || 0);
         if (start < hours.open) {
-          add("warn", ev.groups, day, `${displayTitle(ev)} (${ev.time}) is before ${hours.name} opens at ${clock(hours.open)}.`);
+          add("warn", ev.groups, day, `${displayTitle(ev)} (${ev.time}) is before ${hours.name} opens at ${clock(hours.open)}.`, null, [ev.id]);
         } else if (ev.type !== "show" && until > hours.close) {
-          add("warn", ev.groups, day, `${displayTitle(ev)} (${ev.time}) runs past ${hours.name}'s ${clock(hours.close)} close.`);
+          add("warn", ev.groups, day, `${displayTitle(ev)} (${ev.time}) runs past ${hours.name}'s ${clock(hours.close)} close.`, null, [ev.id]);
         }
       }
       // Not booked yet.
@@ -1285,8 +1231,10 @@ function buildAdvice() {
   const merged = [];
   for (const x of items) {
     const same = merged.find((m) => m.level === x.level && m.day === x.day && m.text === x.text && m.detail === x.detail);
-    if (same) same.groups = [...new Set([...same.groups, ...x.groups])];
-    else merged.push({ ...x, groups: [...x.groups] });
+    if (same) {
+      same.groups = [...new Set([...same.groups, ...x.groups])];
+      same.ids = [...new Set([...same.ids, ...x.ids])];
+    } else merged.push({ ...x, groups: [...x.groups], ids: [...x.ids] });
   }
   const order = (g) => plan.groups.findIndex((x) => x.id === g);
   merged.forEach((m) => m.groups.sort((a, b) => order(a) - order(b)));
@@ -1328,15 +1276,35 @@ function renderOpen() {
       ]));
     }
   }
+  if (plan.passes && plan.passes.length) {
+    root.append(dayHeader("Lightning Lane tips"), el("ul", { class: "tips" }, plan.passes.map((t) => el("li", {}, t))));
+  }
   root.append(el("p", { class: "meta" },
     `Worked out from the current plan, assuming ${PARK_TRANSFER} minutes to change parks and ${SAME_PARK_WALK} minutes between stops in a park.`));
 }
 
+// Cards with a problem listed on the Advice tab, and the groups it affects.
+let adviceWarnings = new Map();
+function indexAdviceWarnings() {
+  adviceWarnings = new Map();
+  for (const x of buildAdvice()) {
+    if (x.level !== "warn") continue;
+    for (const id of x.ids) adviceWarnings.set(id, [...new Set([...(adviceWarnings.get(id) || []), ...x.groups])]);
+  }
+}
+
+function adviceAlert(ev) {
+  const groups = adviceWarnings.get(ev.id);
+  if (!groups || !matchesGroup(groups, state.group)) return null;
+  const btn = el("button", { type: "button", class: "advice-alert", "aria-label": "Timing problem, see Advice" }, "⚠ See Advice");
+  btn.addEventListener("click", () => { selectTab("open"); window.scrollTo({ top: 0 }); });
+  return btn;
+}
+
 function renderAll() {
+  indexAdviceWarnings();
   renderNow();
   renderItinerary();
-  renderLightning();
-  renderDining();
   renderTimeline();
   renderWish();
   renderTravel();
@@ -1723,6 +1691,23 @@ function wireTheme() {
   applyTheme(saved);
 }
 
+// Compact mode shows each card as a short block: time, title, groups and status.
+function wireCompact() {
+  const btn = document.getElementById("compact-toggle");
+  const apply = (on) => {
+    if (on) document.documentElement.dataset.compact = "1";
+    else delete document.documentElement.dataset.compact;
+    btn.setAttribute("aria-pressed", String(on));
+    btn.setAttribute("aria-label", on ? "Full cards" : "Compact cards");
+  };
+  apply(document.documentElement.dataset.compact === "1");
+  btn.addEventListener("click", () => {
+    const on = document.documentElement.dataset.compact !== "1";
+    apply(on);
+    try { localStorage.setItem("disney-compact", on ? "1" : "0"); } catch { /* storage unavailable */ }
+  });
+}
+
 // Dark mode works with every theme. It follows the phone's setting until toggled.
 const MODE_KEY = "disney-mode";
 function applyMode(dark) {
@@ -1817,8 +1802,6 @@ function showPlan(decrypted, key) {
     syncNowTab(false);
     renderNow();
     renderItinerary();
-    renderLightning();
-    renderDining();
     renderTimeline();
   }, 30000);
   setInterval(() => { if (!document.hidden) loadWaits(); }, 5 * 60000);
@@ -1883,4 +1866,5 @@ renderDots();
 wireTabs();
 wireTheme();
 wireMode();
+wireCompact();
 tryRemembered();
