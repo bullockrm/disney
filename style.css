@@ -516,3 +516,5 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
   font-size: 0.62rem; font-weight: 800; letter-spacing: 0.04em; line-height: 1;
   padding: 2px 3px; border: 1.5px solid currentColor; border-radius: 4px; opacity: 0.8;
 }
+.title-row .title { display: inline-flex; align-items: flex-start; gap: 6px; }
+.title-row .title .ev-icon { margin-top: 2px; }

@@ -38,6 +38,8 @@ const state = {
   type: "ALL",
   query: "",
   timelineDay: null,
+  attrKind: "ALL",
+  little: false,
 };
 
 function readStore(key, fallback) {
@@ -465,6 +467,9 @@ const ICONS = {
   ride: '<path d="M2.5 18.5C5 10 7 6.5 9.5 6.5s3.5 7 6 7 3.4-3 6-6.5M2 18.5h20M6 18.5v-6M10 18.5V7M15.5 18.5v-5"/>',
   plane: '<path d="M21 15.5v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0v5l-8 5v2l8-2.5v5.5l-2 1.5V22l3.5-1 3.5 1v-1.5l-2-1.5V13z" fill="currentColor" stroke="none"/>',
   bus: '<rect x="4" y="3" width="16" height="14.5" rx="2.5"/><path d="M4 11h16M7.5 17.5V21M16.5 17.5V21"/><circle cx="8" cy="14.3" r="1" fill="currentColor"/><circle cx="16" cy="14.3" r="1" fill="currentColor"/>',
+  show: '<path d="M3 4h18M4 4v16M20 4v16M4 4c2.5 4 5 6 8 6s5.5-2 8-6M3 20h18"/><path d="M9.5 20v-4.5h5V20"/>',
+  character: '<circle cx="12" cy="8" r="3.5"/><path d="M5 21c.6-4 3.3-6.5 7-6.5s6.4 2.5 7 6.5M18.5 3l.7 1.5 1.6.2-1.2 1.1.3 1.6-1.4-.8-1.4.8.3-1.6-1.2-1.1 1.6-.2z"/>',
+  play: '<path d="M5 21V8h4v13M3 8h8M9 10.5c4 0 5 3 7 6.5l3.5 4"/><path d="M5 12.5h4M5 16.5h4"/>',
   move: '<circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="5.5" r="2.5"/><path d="M8 18.5h6.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H16"/>',
   resort: '<path d="M4.5 21V10.5h15V21M2.5 21h19M10 21v-4h4v4M12 10.5V3l5 1.8L12 6.6M8 13.5h1.5M14.5 13.5H16"/>',
 };
@@ -851,6 +856,8 @@ function renderTimeline() {
 
 // ---------- Wish list ----------
 
+const ATTR_KINDS = [["ALL", "All"], ["ride", "Rides"], ["show", "Shows"], ["character", "Characters"], ["play", "Play areas"]];
+
 function renderWish() {
   const root = document.getElementById("attractions-list");
   root.replaceChildren();
@@ -858,22 +865,37 @@ function renderWish() {
   if (hint) root.append(hint);
   const note = waitsNote();
   if (note) root.append(note);
-  const planned = plan.days.flatMap((d) => d.events.filter((ev) => ev.ride).map((ev) => ({ ev, day: d })));
+  const planned = plan.days.flatMap((d) => d.events.filter((ev) => ev.type !== "travel").map((ev) => ({ ev, day: d })));
+
+  // Filters: kind of attraction, and "little ones" for no height minimum and gentle.
+  const chips = document.getElementById("attr-chips");
+  chips.replaceChildren();
+  for (const [k, label] of ATTR_KINDS) {
+    chips.append(chip(label, state.attrKind === k, () => { state.attrKind = k; renderWish(); }));
+  }
+  chips.append(chip("★ Little ones", state.little, () => { state.little = !state.little; renderWish(); }));
+  const shown = (r) => (state.attrKind === "ALL" || (r.kind || "ride") === state.attrKind) && (!state.little || r.little);
 
   const card = (r, park, showPark) => {
     const id = "wish-" + normName(r.name);
     const ride = r.ride || r.name;
     // Every booking of this ride, with the groups that have it and the day.
-    const bookings = planned.filter((x) => normName(r.name).includes(normName(x.ev.ride)));
+    const key = normName(ride);
+    const bookings = planned.filter((x) =>
+      (x.ev.ride && normName(r.name).includes(normName(x.ev.ride))) || normName(x.ev.title).includes(key));
     const star = el("button", {
       type: "button", class: "fav-star" + (isFav(id) ? " on" : ""),
       "aria-pressed": String(isFav(id)), "aria-label": "Favorite",
     }, isFav(id) ? "★" : "☆");
     star.addEventListener("click", () => { toggleFav(id); renderWish(); });
     const detail = [showPark ? park : null, r.kid, r.about, r.pass].filter(Boolean).join(" · ");
+    const kind = r.kind || "ride";
+    const icon = kind === "show" && /parade|cavalcade/i.test(r.name) ? "parade"
+      : kind === "show" && r.timed && !/parade/i.test(r.name) && /fireworks|nighttime|luminous|happily|fantasmic/i.test(r.name + " " + r.about) ? "fireworks"
+      : kind;
     const body = el("div", { class: "event " + parkClass(park) + (isDone(id) ? " done" : "") }, [
       el("div", { class: "title-row" }, [
-        el("span", { class: "title" }, r.name),
+        el("span", { class: "title" }, [iconEl(icon), r.name]),
         el("span", { class: "status" }, [
           isDone(id) ? el("span", { class: "badge done" }, "✓ Done") : null,
           waitChip(ride),
@@ -893,14 +915,20 @@ function renderWish() {
 
   // Favorites are pulled out of their park and listed first.
   const all = plan.wishlist.flatMap((p) => p.rides.map((r) => ({ r, park: p.park })));
-  const favs = all.filter((x) => isFav("wish-" + normName(x.r.name)));
+  const favs = all.filter((x) => isFav("wish-" + normName(x.r.name)) && shown(x.r));
   if (favs.length) root.append(dayHeader("Favorites"), ...favs.map((x) => card(x.r, x.park, true)));
+  const kindOrder = (r) => ATTR_KINDS.findIndex(([k]) => k === (r.kind || "ride"));
+  let count = favs.length;
   for (const p of plan.wishlist) {
-    const rest = p.rides.filter((r) => !isFav("wish-" + normName(r.name)));
+    const rest = p.rides.filter((r) => !isFav("wish-" + normName(r.name)) && shown(r))
+      .map((r, i) => [r, i]).sort((a, b) => kindOrder(a[0]) - kindOrder(b[0]) || a[1] - b[1]).map((x) => x[0]);
     if (!rest.length) continue;
+    count += rest.length;
     root.append(dayHeader(p.park), ...rest.map((r) => card(r, p.park, false)));
   }
-  root.append(el("p", { class: "meta" }, "Every ride in the four parks. Tap ☆ to move a ride to the top. Check the Disney app for closures."));
+  if (!count) root.append(el("p", { class: "meta" }, "Nothing matches these filters."));
+  root.append(el("p", { class: "meta" },
+    "Rides, shows, character meets and play areas in the four parks. ★ Little ones shows things with no height minimum. Showtimes and character spots change, so check the Disney app on the day."));
 }
 
 // ---------- Calendar export ----------
@@ -998,12 +1026,15 @@ function rideIdeas(day, groupId, code) {
   const park = plan.wishlist.find((p) => parkCode(p.park) === code);
   if (!park) return [];
   const have = day.events.filter((ev) => ev.ride && ev.groups.includes(groupId)).map((ev) => normName(ev.ride));
+  // Groups with little ones get little-friendly ideas first: no height minimum, gentle shows and meets.
+  const little = (plan.groups.find((g) => g.id === groupId) || {}).little;
+  const label = { show: "show", character: "meet", play: "play area" };
   return park.rides
-    .filter((r) => !have.some((h) => normName(r.name).includes(h)))
-    .map((r) => ({ r, fav: isFav("wish-" + normName(r.name)), wait: (waitFor(r.ride || r.name) || {}).wait }))
-    .sort((a, b) => (b.fav - a.fav) || ((a.wait ?? 999) - (b.wait ?? 999)))
+    .filter((r) => !r.timed && !have.some((h) => normName(r.name).includes(h)))
+    .map((r) => ({ r, fav: isFav("wish-" + normName(r.name)), kid: little && r.little ? 1 : 0, wait: (waitFor(r.ride || r.name) || {}).wait }))
+    .sort((a, b) => (b.fav - a.fav) || (b.kid - a.kid) || ((a.wait ?? 999) - (b.wait ?? 999)))
     .slice(0, 3)
-    .map((x) => x.r.name + (x.wait != null ? ` (${x.wait} min)` : ""));
+    .map((x) => x.r.name + (label[x.r.kind] ? ` (${label[x.r.kind]})` : "") + (x.wait != null ? ` · ${x.wait} min` : ""));
 }
 
 function buildAdvice() {
@@ -1403,12 +1434,12 @@ function openEditor(eventId, dayId) {
 
   const endField = field("Ends", end);
   const secondField = field("Second seating", second);
-  const rideField = field("Ride (for wait times and Attractions)", rideSel);
+  const rideField = field("Attraction (for wait times and the Attractions tab)", rideSel);
   const syncFields = () => {
     const t = typeSel.value;
     endField.firstChild.textContent = t === "lightning" ? "Window ends" : "Ends";
     secondField.hidden = t !== "dining";
-    rideField.hidden = !(t === "lightning" || t === "attraction");
+    rideField.hidden = !(t === "lightning" || t === "attraction" || t === "show");
   };
   typeSel.addEventListener("change", syncFields);
   syncFields();
