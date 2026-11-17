@@ -454,6 +454,40 @@ function waitsNote() {
 
 // ---------- Event cards ----------
 
+// Small line icons for each kind of plan, covering the same subjects the Disney
+// itinerary uses: dining, Lightning Lanes, parades, fireworks, the resort and travel.
+const ICONS = {
+  lightning: '<path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" fill="currentColor" stroke="none"/>',
+  dining: '<path d="M6 2v7.5M3.5 2v5a2.5 2.5 0 0 0 5 0V2M6 9.5V22M17.5 22V2c-2.6 1.3-3.9 4.4-3.9 8.6V14h3.9"/>',
+  parade: '<ellipse cx="12" cy="9.5" rx="8" ry="3"/><path d="M4 9.5v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7M8 12.3v7M16 12.3v7M8.5 2.5l3 5M15.5 2.5l-3 5"/>',
+  fireworks: '<circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.8 2.8M15.9 15.9l2.8 2.8M5.3 18.7l2.8-2.8M15.9 8.1l2.8-2.8"/>',
+  ride: '<path d="M2.5 18.5C5 10 7 6.5 9.5 6.5s3.5 7 6 7 3.4-3 6-6.5M2 18.5h20M6 18.5v-6M10 18.5V7M15.5 18.5v-5"/>',
+  plane: '<path d="M21 15.5v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0v5l-8 5v2l8-2.5v5.5l-2 1.5V22l3.5-1 3.5 1v-1.5l-2-1.5V13z" fill="currentColor" stroke="none"/>',
+  bus: '<rect x="4" y="3" width="16" height="14.5" rx="2.5"/><path d="M4 11h16M7.5 17.5V21M16.5 17.5V21"/><circle cx="8" cy="14.3" r="1" fill="currentColor"/><circle cx="16" cy="14.3" r="1" fill="currentColor"/>',
+  resort: '<path d="M4.5 21V10.5h15V21M2.5 21h19M10 21v-4h4v4M12 10.5V3l5 1.8L12 6.6M8 13.5h1.5M14.5 13.5H16"/>',
+};
+
+function iconFor(ev) {
+  const t = ev.title.toLowerCase();
+  if (/parade/.test(t)) return "parade";
+  if (/happily ever after|luminous|fantasmic|fireworks|nighttime/.test(t)) return "fireworks";
+  if (ev.type === "lightning") return "lightning";
+  if (ev.type === "dining") return "dining";
+  if (ev.type === "show") return /parade/.test(t) ? "parade" : "fireworks";
+  if (ev.type === "travel") {
+    if (/mears|bus|shuttle/.test(t)) return "bus";
+    if (/check|resort|room/.test(t)) return "resort";
+    return "plane";
+  }
+  return "ride";
+}
+
+function iconEl(name) {
+  const span = el("span", { class: "ev-icon", "aria-hidden": "true" });
+  span.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+  return span;
+}
+
 function eventCard(ev, extra) {
   const classes = ["event", ev.type, parkClass(ev.location)];
   if (ev.status === "proposed") classes.push("proposed");
@@ -468,7 +502,7 @@ function eventCard(ev, extra) {
   const card = el("div", { class: classes.join(" ") }, [
     extra ? el("div", { class: "countdown" }, extra) : null,
     el("div", { class: "time-row" }, [
-      el("span", { class: "time" }, ev.time),
+      el("span", { class: "time" }, [iconEl(iconFor(ev)), ev.time]),
       right.length ? el("span", { class: "status" }, right) : null,
     ]),
     el("div", { class: "title" }, ev.title),

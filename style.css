@@ -507,3 +507,8 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
 .advice-head:empty { display: none; }
 .advice-day { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
 .advice-text { font-size: 0.9rem; font-weight: 600; }
+
+/* Plan-type icon before the time. */
+.event .time { display: inline-flex; align-items: center; gap: 6px; }
+.ev-icon { display: inline-flex; color: var(--ink); opacity: 0.75; }
+.ev-icon svg { display: block; }
