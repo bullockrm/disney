@@ -290,6 +290,20 @@ function saveNote(id, text) {
   writeStore(NOTES_KEY, notes);
 }
 
+// On an iPhone, open the Maps app directly with the maps: link. Opening a new
+// window from a home-screen web app leaves iOS on a blank page when you come back.
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+function openDirections(name, location) {
+  const url = mapsUrl(name, location);
+  if (isIOS()) {
+    window.location.href = url.replace("https://maps.apple.com/", "maps://");
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+}
+
 function mapsUrl(name, location) {
   const clean = name.replace(/\s*\(.*?\)/g, "").replace(/^(Lunch|Dinner) at /, "").replace(/ LL$/, "");
   // Apple Maps walking directions; on an iPhone this opens the Maps app.
@@ -401,7 +415,7 @@ function swipeCard(card, opts) {
   card.addEventListener("click", (e) => {
     if (suppressClick) { suppressClick = false; return; }
     if (e.target.closest("textarea, button, a, input")) return;
-    if (opts.location) window.open(mapsUrl(opts.name, opts.location), "_blank", "noopener");
+    if (opts.location) openDirections(opts.name, opts.location);
   });
   return wrap;
 }
