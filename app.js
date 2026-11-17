@@ -404,30 +404,36 @@ function eventCard(ev, extra) {
   ]);
 }
 
-function nowDivider(now) {
-  return el("div", { class: "now-divider" }, el("span", {}, `Now · ${clock(now.mins)}`));
+// True while a plan is in progress: inside a Lightning Lane window, or during a meal or show.
+function isActive(ev, mins) {
+  if (!ev.start) return false;
+  const start = minutes(ev.start);
+  const until = ev.end ? minutes(ev.end) : start + Math.max(ev.dur || 0, 15);
+  return mins >= start && mins <= until;
 }
 
-// Adds a day's cards to a list. On the current day a rail runs down the left of
-// the cards: red down to the "Now" marker, grey for what is still ahead.
+// Adds a day's cards to a list. On the current day a small red bar sits to the
+// left of any card you should be at right now. If nothing is in progress, a red
+// dot marks where the current time falls between cards.
 function appendDayCards(container, day, events) {
   const now = nowET();
   if (day.date !== now.date) {
     container.append(...events.map((ev) => eventCard(ev)));
     return;
   }
-  let marked = false;
+  const anyActive = events.some((ev) => isActive(ev, now.mins));
+  let dotted = anyActive;
   for (const ev of events) {
-    const ahead = !ev.start || minutes(ev.start) > now.mins;
-    if (!marked && ev.start && ahead) {
-      container.append(nowDivider(now));
-      marked = true;
+    if (!dotted && ev.start && minutes(ev.start) > now.mins) {
+      container.append(el("div", { class: "now-dot", title: `Now: ${clock(now.mins)}` }));
+      dotted = true;
     }
     const card = eventCard(ev);
-    card.classList.add("rail", marked ? "ahead" : "past");
+    card.classList.add("today");
+    if (isActive(ev, now.mins)) card.classList.add("active-now");
     container.append(card);
   }
-  if (!marked) container.append(nowDivider(now));
+  if (!dotted) container.append(el("div", { class: "now-dot", title: `Now: ${clock(now.mins)}` }));
 }
 
 // Sticky date header shared by the lists.
