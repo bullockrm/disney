@@ -386,3 +386,7 @@ li { margin-bottom: 0.3rem; }
 /* Section heading inside the Now tab. */
 h2.sec { font-size: 0.95rem; margin: 0.75rem 0 0.4rem; }
 .tab[hidden] { display: none; }
+
+/* Which groups already have a wish-list ride in their plan. */
+.booked { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 5px; font-size: 0.78rem; color: var(--muted); }
+.booked-label { font-weight: 600; color: var(--ok); }

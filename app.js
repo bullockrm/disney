@@ -706,22 +706,27 @@ function renderWish() {
   root.replaceChildren();
   const note = waitsNote();
   if (note) root.append(note);
-  const planned = plan.days.flatMap((d) => d.events).filter((ev) => ev.ride);
+  const planned = plan.days.flatMap((d) => d.events.filter((ev) => ev.ride).map((ev) => ({ ev, day: d })));
 
   const card = (r, park, showPark) => {
     const id = "wish-" + normName(r.name);
     const ride = r.ride || r.name;
-    const inPlan = planned.find((ev) => normName(r.name).includes(normName(ev.ride)));
+    // Every booking of this ride, with the groups that have it and the day.
+    const bookings = planned.filter((x) => normName(r.name).includes(normName(x.ev.ride)));
     const tags = [
       showPark ? el("span", { class: "tag" }, park) : null,
       el("span", { class: "tag" }, r.kid),
       r.pass ? el("span", { class: "tag" }, r.pass) : null,
-      inPlan ? el("span", { class: "tag plan" }, inPlan.status === "proposed" ? "Proposed" : "In the plan") : null,
       waitChip(ride),
     ].filter(Boolean);
     return el("div", { class: "event " + parkClass(park) + (isDone(id) ? " done" : "") }, [
       el("div", { class: "title" }, r.name),
       el("div", { class: "tags" }, tags),
+      ...bookings.map((x) => el("div", { class: "booked" }, [
+        el("span", { class: "booked-label" }, x.ev.status === "proposed" ? "Proposed for" : "In the plan for"),
+        ...groupChips(x.ev.groups),
+        el("span", {}, `${x.day.label} · ${x.ev.time}`),
+      ])),
       ...cardActions(id, r.name, park, true),
     ]);
   };
