@@ -408,6 +408,28 @@ function nowDivider(now) {
   return el("div", { class: "now-divider" }, el("span", {}, `Now · ${clock(now.mins)}`));
 }
 
+// Adds a day's cards to a list. On the current day a rail runs down the left of
+// the cards: red down to the "Now" marker, grey for what is still ahead.
+function appendDayCards(container, day, events) {
+  const now = nowET();
+  if (day.date !== now.date) {
+    container.append(...events.map((ev) => eventCard(ev)));
+    return;
+  }
+  let marked = false;
+  for (const ev of events) {
+    const ahead = !ev.start || minutes(ev.start) > now.mins;
+    if (!marked && ev.start && ahead) {
+      container.append(nowDivider(now));
+      marked = true;
+    }
+    const card = eventCard(ev);
+    card.classList.add("rail", marked ? "ahead" : "past");
+    container.append(card);
+  }
+  if (!marked) container.append(nowDivider(now));
+}
+
 // Sticky date header shared by the lists.
 function dayHeader(label) {
   return el("h3", { class: "day-h" }, label);
@@ -518,17 +540,7 @@ function renderItinerary() {
     if (hours) days.append(hours);
     const warn = warningList(dayWarnings(d));
     if (warn) days.append(warn);
-    // On the current day, a red line separates what has started from what is still ahead.
-    const now = nowET();
-    let lined = d.date !== now.date;
-    for (const ev of matches) {
-      if (!lined && ev.start && minutes(ev.start) > now.mins) {
-        days.append(nowDivider(now));
-        lined = true;
-      }
-      days.append(eventCard(ev));
-    }
-    if (!lined) days.append(nowDivider(now));
+    appendDayCards(days, d, matches);
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
 }
@@ -546,7 +558,8 @@ function renderLightning() {
       ev.type === "lightning" && matchesGroup(ev.groups, state.group));
     if (!lanes.length) continue;
     shown += lanes.length;
-    list.append(dayHeader(d.label), ...lanes.map((ev) => eventCard(ev)));
+    list.append(dayHeader(d.label));
+    appendDayCards(list, d, lanes);
   }
   if (!shown) list.append(el("p", { class: "meta" }, "No Lightning Lanes match this group."));
 
@@ -567,7 +580,8 @@ function renderDining() {
     const meals = d.events.filter((ev) => ev.type === "dining" && matchesGroup(ev.groups, state.group));
     if (!meals.length) continue;
     shown += meals.length;
-    list.append(dayHeader(d.label), ...meals.map((ev) => eventCard(ev)));
+    list.append(dayHeader(d.label));
+    appendDayCards(list, d, meals);
   }
   if (!shown) list.append(el("p", { class: "meta" }, "No dining plans match this group."));
 }
@@ -885,6 +899,8 @@ function showPlan(decrypted) {
     if (document.hidden || typing) return;
     renderNow();
     renderItinerary();
+    renderLightning();
+    renderDining();
     renderTimeline();
   }, 30000);
   setInterval(() => { if (!document.hidden) loadWaits(); }, 5 * 60000);
