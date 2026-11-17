@@ -220,10 +220,19 @@ button {
   border-left: 5px solid var(--park, var(--line));
   border-radius: 10px;
   padding: 0.6rem 0.8rem;
-  margin-bottom: 0.5rem;
 }
 .event.proposed { border-style: dashed; border-left-style: solid; }
-.event .time { font-weight: 600; font-size: 0.85rem; color: var(--muted); }
+.event .time { font-weight: 600; font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.time-row, .title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.title-row { align-items: flex-start; }
+.status { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; flex: none; max-width: 60%; }
+.status .badge { margin: 0; }
+.badge.done { background: var(--ok); color: #ffffff; }
+.fav-star {
+  border: 0; background: none; padding: 0 2px; font-size: 1.15rem; line-height: 1;
+  color: var(--muted); cursor: pointer;
+}
+.fav-star.on { color: #e0a800; }
 .event .title { font-weight: 600; }
 .event .meta { font-size: 0.85rem; color: var(--muted); }
 .event .notes { font-size: 0.85rem; margin-top: 0.25rem; }
@@ -365,8 +374,8 @@ li { margin-bottom: 0.3rem; }
 .tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #e02424; z-index: 1; }
 .now-label { font-size: 0.75rem; font-weight: 700; color: #e02424; margin: 0 0 0.25rem; }
 /* Today's cards shift right, leaving a gutter that shows the current time in red. */
-.event.today { position: relative; margin-left: 38px; }
-.event.active-now::before {
+.swipe.today { margin-left: 38px; }
+.swipe.active-now::before {
   content: ""; position: absolute; left: -8px; top: 0; bottom: 0; width: 3px;
   border-radius: 2px; background: #e02424;
 }
@@ -390,3 +399,22 @@ h2.sec { font-size: 0.95rem; margin: 0.75rem 0 0.4rem; }
 /* Which groups already have a wish-list ride in their plan. */
 .booked { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 5px; font-size: 0.78rem; color: var(--muted); }
 .booked-label { font-weight: 600; color: var(--ok); }
+
+/* Swipe actions: left for done, right for a note, tap for directions. */
+.swipe { position: relative; margin-bottom: 0.5rem; }
+.swipe > .event { position: relative; transition: transform 0.2s ease; }
+.swipe > .event.swipeable { touch-action: pan-y; cursor: pointer; -webkit-user-select: none; user-select: none; }
+.swipe > .event .note-input { -webkit-user-select: text; user-select: text; }
+.swipe.dragging > .event { transition: none; }
+.swipe-bg {
+  position: absolute; inset: 0; border-radius: 10px;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 14px;
+  font-size: 0.8rem; font-weight: 700; color: #ffffff; opacity: 0;
+}
+.swipe.dragging .swipe-bg { opacity: 1; }
+.swipe-bg span { opacity: 0.55; transition: opacity 0.1s; }
+.swipe.armed .swipe-bg span { opacity: 1; }
+.swipe[data-dir="note"] .swipe-bg { background: var(--accent); }
+.swipe[data-dir="note"] .swipe-done, .swipe[data-dir="done"] .swipe-note { visibility: hidden; }
+.swipe[data-dir="done"] .swipe-bg { background: var(--ok); }
+.hint { font-size: 0.75rem; color: var(--muted); text-align: center; margin: 0.25rem 0 0.5rem; }

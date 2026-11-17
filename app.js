@@ -8,6 +8,8 @@ const GROUP_KEY = "disney-group";
 const DONE_KEY = "disney-done";
 const NOTES_KEY = "disney-notes";
 const FAV_KEY = "disney-favorites";
+const HINT_KEY = "disney-swipe-hint-seen";
+const SWIPE_DISTANCE = 70;
 const THEMES = ["sunset", "castle", "teal"];
 const TYPES = ["dining", "lightning", "show", "attraction", "travel"];
 const MAX_DIGITS = 12;
@@ -296,33 +298,87 @@ function toggleFav(id) {
   writeStore(FAV_KEY, favs);
 }
 
-function cardActions(id, name, location, canFavorite) {
-  const noteBox = el("textarea", { class: "note-input", rows: "2", placeholder: "Note (saved on this device)", hidden: "" });
-  noteBox.value = noteFor(id);
-  if (noteBox.value) noteBox.hidden = false;
-  noteBox.addEventListener("change", () => saveNote(id, noteBox.value));
+// Note box inside a card. It stays hidden until there is a note or the card is swiped right.
+function noteBox(id) {
+  const box = el("textarea", { class: "note-input", rows: "2", placeholder: "Note (saved on this device)", hidden: "" });
+  box.value = noteFor(id);
+  if (box.value) box.hidden = false;
+  box.addEventListener("change", () => saveNote(id, box.value));
+  box.addEventListener("blur", () => { if (!box.value.trim()) box.hidden = true; });
+  return box;
+}
 
-  const done = el("button", { type: "button", class: "act" + (isDone(id) ? " on" : ""), "aria-pressed": String(isDone(id)) },
-    isDone(id) ? "✓ Done" : "Done");
-  done.addEventListener("click", () => { toggleDone(id); renderAll(); });
+function swipeHint() {
+  if (readStore(HINT_KEY, false)) return null;
+  return el("p", { class: "hint" }, "Tap a card for directions · swipe left for Done · swipe right for a note");
+}
 
-  const note = el("button", { type: "button", class: "act" }, "Note");
-  note.addEventListener("click", () => {
-    noteBox.hidden = !noteBox.hidden && !noteBox.value;
-    if (!noteBox.hidden) noteBox.focus();
+// Wraps a card so it can be swiped: left marks it done, right opens its note,
+// and a plain tap opens directions. Vertical scrolling is left to the browser.
+function swipeCard(card, opts) {
+  const wrap = el("div", { class: "swipe" }, [
+    el("div", { class: "swipe-bg", "aria-hidden": "true" }, [
+      el("span", { class: "swipe-note" }, "✎ Note"),
+      el("span", { class: "swipe-done" }, opts && isDone(opts.id) ? "↺ Not done" : "✓ Done"),
+    ]),
+    card,
+  ]);
+  if (!opts) return wrap;
+  card.classList.add("swipeable");
+
+  let x0 = null, y0 = 0, dx = 0, dragging = false, moved = false, pid = null, suppressClick = false;
+  const reset = () => {
+    wrap.classList.remove("dragging", "armed");
+    card.style.transform = "";
+    x0 = null; dragging = false; dx = 0;
+  };
+  card.addEventListener("pointerdown", (e) => {
+    suppressClick = false;
+    if (e.target.closest("textarea, button, a, input")) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    x0 = e.clientX; y0 = e.clientY; dx = 0; dragging = false; moved = false; pid = e.pointerId;
   });
-
-  const row = [done, note];
-  if (canFavorite) {
-    const fav = el("button", { type: "button", class: "act fav" + (isFav(id) ? " on" : ""), "aria-pressed": String(isFav(id)) },
-      isFav(id) ? "★ Favorite" : "☆ Favorite");
-    fav.addEventListener("click", () => { toggleFav(id); renderWish(); });
-    row.unshift(fav);
-  }
-  if (location) {
-    row.push(el("a", { class: "act", href: mapsUrl(name, location), target: "_blank", rel: "noopener" }, "Directions"));
-  }
-  return [el("div", { class: "actions" }, row), noteBox];
+  card.addEventListener("pointermove", (e) => {
+    if (x0 === null || e.pointerId !== pid) return;
+    const mx = e.clientX - x0;
+    const my = e.clientY - y0;
+    if (!dragging) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      moved = true;
+      if (Math.abs(my) > Math.abs(mx)) { x0 = null; return; } // a scroll, not a swipe
+      dragging = true;
+      try { card.setPointerCapture(pid); } catch { /* pointer already released */ }
+      wrap.classList.add("dragging");
+    }
+    dx = Math.max(-130, Math.min(130, mx));
+    card.style.transform = `translateX(${dx}px)`;
+    wrap.dataset.dir = dx > 0 ? "note" : "done";
+    wrap.classList.toggle("armed", Math.abs(dx) >= SWIPE_DISTANCE);
+  });
+  card.addEventListener("pointerup", () => {
+    if (moved) suppressClick = true;
+    if (!dragging) { x0 = null; return; }
+    const action = dx <= -SWIPE_DISTANCE ? "done" : dx >= SWIPE_DISTANCE ? "note" : null;
+    reset();
+    if (!action) return;
+    writeStore(HINT_KEY, true);
+    document.querySelectorAll(".hint").forEach((h) => h.remove());
+    if (action === "done") {
+      toggleDone(opts.id);
+      renderAll();
+    } else {
+      const box = card.querySelector(".note-input");
+      box.hidden = false;
+      box.focus();
+    }
+  });
+  card.addEventListener("pointercancel", reset);
+  card.addEventListener("click", (e) => {
+    if (suppressClick) { suppressClick = false; return; }
+    if (e.target.closest("textarea, button, a, input")) return;
+    if (opts.location) window.open(mapsUrl(opts.name, opts.location), "_blank", "noopener");
+  });
+  return wrap;
 }
 
 // ---------- Live waits ----------
@@ -362,10 +418,10 @@ function waitChip(ride) {
   const info = waitFor(ride);
   if (!info) return null;
   if (info.status && info.status !== "OPERATING") {
-    return el("span", { class: "tag wait down" }, info.status === "DOWN" ? "Temporarily down" : "Closed now");
+    return el("span", { class: "tag wait down" }, info.status === "DOWN" ? "Down" : "Closed");
   }
   if (info.wait == null) return null;
-  return el("span", { class: "tag wait" }, `Standby ${info.wait} min`);
+  return el("span", { class: "tag wait", title: "Current standby wait" }, `${info.wait} min wait`);
 }
 
 function waitsNote() {
@@ -384,24 +440,27 @@ function eventCard(ev, extra) {
   const classes = ["event", ev.type, parkClass(ev.location)];
   if (ev.status === "proposed") classes.push("proposed");
   if (isDone(ev.id)) classes.push("done");
-  const badges = [];
-  if (ev.status === "open") badges.push(el("span", { class: "badge open" }, "Open"));
-  if (ev.status === "proposed") badges.push(el("span", { class: "badge proposed" }, "Proposed"));
-  const tags = [
-    ev.kid ? el("span", { class: "tag" }, ev.kid) : null,
+  const right = [
+    ev.status === "open" ? el("span", { class: "badge open" }, "Open") : null,
+    ev.status === "proposed" ? el("span", { class: "badge proposed" }, "Proposed") : null,
+    isDone(ev.id) ? el("span", { class: "badge done" }, "✓ Done") : null,
     ev.type === "lightning" || ev.type === "attraction" ? waitChip(ev.ride) : null,
   ].filter(Boolean);
-  return el("div", { class: classes.join(" ") }, [
+  const travel = ev.type === "travel";
+  const card = el("div", { class: classes.join(" ") }, [
     extra ? el("div", { class: "countdown" }, extra) : null,
-    el("div", { class: "time" }, ev.time),
-    el("div", { class: "title" }, [...badges, ev.title]),
+    el("div", { class: "time-row" }, [
+      el("span", { class: "time" }, ev.time),
+      right.length ? el("span", { class: "status" }, right) : null,
+    ]),
+    el("div", { class: "title" }, ev.title),
     el("div", { class: "meta" }, ev.location || ""),
     el("div", { class: "grp" }, groupChips(ev.groups)),
-    tags.length ? el("div", { class: "tags" }, tags) : null,
     ev.meet ? el("div", { class: "notes" }, ev.meet) : null,
     ev.notes ? el("div", { class: "notes" }, ev.notes) : null,
-    ...(ev.type === "travel" ? [] : cardActions(ev.id, ev.title, ev.location)),
+    travel ? null : noteBox(ev.id),
   ]);
+  return swipeCard(card, travel ? null : { id: ev.id, name: ev.title, location: ev.location });
 }
 
 // True while a plan is in progress: inside a Lightning Lane window, or during a meal or show.
@@ -486,6 +545,8 @@ function renderNow() {
   top.replaceChildren();
   root.replaceChildren();
   if (!inTrip()) return;
+  const hint = swipeHint();
+  if (hint) top.append(hint);
   const now = nowET();
   const day = plan.days.find((d) => d.date === now.date);
   top.append(el("div", { class: "now-banner" }, `${day.label} · ${clock(now.mins)} in Orlando`));
@@ -537,6 +598,8 @@ function renderItinerary() {
     }));
   }
 
+  const hint = swipeHint();
+  if (hint) days.append(hint);
   const q = state.query.trim().toLowerCase();
   let shown = 0;
   for (const d of plan.days) {
@@ -570,6 +633,8 @@ function renderLightning() {
   const list = document.getElementById("ll-list");
   groupFilter(document.getElementById("ll-group-chips"));
   list.replaceChildren();
+  const hint = swipeHint();
+  if (hint) list.append(hint);
 
   let shown = 0;
   for (const d of plan.days) {
@@ -592,6 +657,8 @@ function renderDining() {
   const list = document.getElementById("dining-list");
   groupFilter(document.getElementById("dining-group-chips"));
   list.replaceChildren();
+  const hint = swipeHint();
+  if (hint) list.append(hint);
 
   // Dining comes from the day events, grouped under each date header.
   let shown = 0;
@@ -702,8 +769,10 @@ function renderTimeline() {
 // ---------- Wish list ----------
 
 function renderWish() {
-  const root = document.getElementById("wish-list");
+  const root = document.getElementById("attractions-list");
   root.replaceChildren();
+  const hint = swipeHint();
+  if (hint) root.append(hint);
   const note = waitsNote();
   if (note) root.append(note);
   const planned = plan.days.flatMap((d) => d.events.filter((ev) => ev.ride).map((ev) => ({ ev, day: d })));
@@ -713,22 +782,30 @@ function renderWish() {
     const ride = r.ride || r.name;
     // Every booking of this ride, with the groups that have it and the day.
     const bookings = planned.filter((x) => normName(r.name).includes(normName(x.ev.ride)));
-    const tags = [
-      showPark ? el("span", { class: "tag" }, park) : null,
-      el("span", { class: "tag" }, r.kid),
-      r.pass ? el("span", { class: "tag" }, r.pass) : null,
-      waitChip(ride),
-    ].filter(Boolean);
-    return el("div", { class: "event " + parkClass(park) + (isDone(id) ? " done" : "") }, [
-      el("div", { class: "title" }, r.name),
-      el("div", { class: "tags" }, tags),
+    const star = el("button", {
+      type: "button", class: "fav-star" + (isFav(id) ? " on" : ""),
+      "aria-pressed": String(isFav(id)), "aria-label": "Favorite",
+    }, isFav(id) ? "★" : "☆");
+    star.addEventListener("click", () => { toggleFav(id); renderWish(); });
+    const detail = [showPark ? park : null, r.kid, r.about, r.pass].filter(Boolean).join(" · ");
+    const body = el("div", { class: "event " + parkClass(park) + (isDone(id) ? " done" : "") }, [
+      el("div", { class: "title-row" }, [
+        el("span", { class: "title" }, r.name),
+        el("span", { class: "status" }, [
+          isDone(id) ? el("span", { class: "badge done" }, "✓ Done") : null,
+          waitChip(ride),
+          star,
+        ].filter(Boolean)),
+      ]),
+      el("div", { class: "meta" }, detail),
       ...bookings.map((x) => el("div", { class: "booked" }, [
         el("span", { class: "booked-label" }, x.ev.status === "proposed" ? "Proposed for" : "In the plan for"),
         ...groupChips(x.ev.groups),
         el("span", {}, `${x.day.label} · ${x.ev.time}`),
       ])),
-      ...cardActions(id, r.name, park, true),
+      noteBox(id),
     ]);
+    return swipeCard(body, { id, name: r.name, location: park });
   };
 
   // Favorites are pulled out of their park and listed first.
@@ -740,7 +817,7 @@ function renderWish() {
     if (!rest.length) continue;
     root.append(dayHeader(p.park), ...rest.map((r) => card(r, p.park, false)));
   }
-  root.append(el("p", { class: "meta" }, "Every ride in the four parks. Tap Favorite to move a ride to the top. Check the Disney app for closures."));
+  root.append(el("p", { class: "meta" }, "Every ride in the four parks. Tap ☆ to move a ride to the top. Check the Disney app for closures."));
 }
 
 // ---------- Calendar export ----------
@@ -918,7 +995,7 @@ function showPlan(decrypted) {
   // Skipped while a note or the search box is being typed in, so typing is not interrupted.
   setInterval(() => {
     const typing = /^(TEXTAREA|INPUT)$/.test((document.activeElement || {}).tagName || "");
-    if (document.hidden || typing) return;
+    if (document.hidden || typing || document.querySelector(".swipe.dragging")) return;
     syncNowTab(false);
     renderNow();
     renderItinerary();
