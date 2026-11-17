@@ -457,7 +457,7 @@ function waitsNote() {
 // Small line icons for each kind of plan, covering the same subjects the Disney
 // itinerary uses: dining, Lightning Lanes, parades, fireworks, the resort and travel.
 const ICONS = {
-  lightning: '<path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" fill="currentColor" stroke="none"/>',
+  lightning: '<path d="M15.5 2 8 13h5.5l-1.5 9 8.5-12.5H15z" fill="currentColor" stroke="none"/><path d="M2.5 8.5h4.5M1.5 12.5h4.5M3 16.5h4"/>',
   dining: '<path d="M6 2v7.5M3.5 2v5a2.5 2.5 0 0 0 5 0V2M6 9.5V22M17.5 22V2c-2.6 1.3-3.9 4.4-3.9 8.6V14h3.9"/>',
   parade: '<ellipse cx="12" cy="9.5" rx="8" ry="3"/><path d="M4 9.5v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7M8 12.3v7M16 12.3v7M8.5 2.5l3 5M15.5 2.5l-3 5"/>',
   fireworks: '<circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.8 2.8M15.9 15.9l2.8 2.8M5.3 18.7l2.8-2.8M15.9 8.1l2.8-2.8"/>',
