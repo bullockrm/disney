@@ -349,3 +349,11 @@ li { margin-bottom: 0.3rem; }
   overflow: hidden; white-space: nowrap;
 }
 .tl-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.5rem; }
+
+/* Current-time markers. */
+.tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #e02424; z-index: 1; }
+.now-label { font-size: 0.75rem; font-weight: 700; color: #e02424; margin: 0 0 0.25rem; }
+.now-divider { display: flex; align-items: center; gap: 8px; margin: 0.6rem 0; color: #e02424; font-size: 0.75rem; font-weight: 700; }
+.now-divider::before, .now-divider::after { content: ""; flex: 1; height: 2px; background: #e02424; }
+.act.fav.on { background: #f5c451; border-color: #f5c451; color: #2a2000; }
+.tag.plan { border-color: var(--ok); color: var(--ok); font-weight: 600; }

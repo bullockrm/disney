@@ -7,6 +7,7 @@ const THEME_KEY = "disney-theme";
 const GROUP_KEY = "disney-group";
 const DONE_KEY = "disney-done";
 const NOTES_KEY = "disney-notes";
+const FAV_KEY = "disney-favorites";
 const THEMES = ["sunset", "castle", "teal"];
 const TYPES = ["dining", "lightning", "show", "attraction", "travel"];
 const MAX_DIGITS = 12;
@@ -288,7 +289,14 @@ function mapsUrl(name, location) {
 }
 
 // Done checkbox, personal note and directions link. Marks and notes stay on this device.
-function cardActions(id, name, location) {
+function isFav(id) { return !!readStore(FAV_KEY, {})[id]; }
+function toggleFav(id) {
+  const favs = readStore(FAV_KEY, {});
+  if (favs[id]) delete favs[id]; else favs[id] = true;
+  writeStore(FAV_KEY, favs);
+}
+
+function cardActions(id, name, location, canFavorite) {
   const noteBox = el("textarea", { class: "note-input", rows: "2", placeholder: "Note (saved on this device)", hidden: "" });
   noteBox.value = noteFor(id);
   if (noteBox.value) noteBox.hidden = false;
@@ -305,6 +313,12 @@ function cardActions(id, name, location) {
   });
 
   const row = [done, note];
+  if (canFavorite) {
+    const fav = el("button", { type: "button", class: "act fav" + (isFav(id) ? " on" : ""), "aria-pressed": String(isFav(id)) },
+      isFav(id) ? "★ Favorite" : "☆ Favorite");
+    fav.addEventListener("click", () => { toggleFav(id); renderWish(); });
+    row.unshift(fav);
+  }
   if (location) {
     row.push(el("a", { class: "act", href: mapsUrl(name, location), target: "_blank", rel: "noopener" }, "Directions"));
   }
@@ -388,6 +402,10 @@ function eventCard(ev, extra) {
     ev.notes ? el("div", { class: "notes" }, ev.notes) : null,
     ...(ev.type === "travel" ? [] : cardActions(ev.id, ev.title, ev.location)),
   ]);
+}
+
+function nowDivider(now) {
+  return el("div", { class: "now-divider" }, el("span", {}, `Now · ${clock(now.mins)}`));
 }
 
 // Sticky date header shared by the lists.
@@ -500,7 +518,17 @@ function renderItinerary() {
     if (hours) days.append(hours);
     const warn = warningList(dayWarnings(d));
     if (warn) days.append(warn);
-    days.append(...matches.map((ev) => eventCard(ev)));
+    // On the current day, a red line separates what has started from what is still ahead.
+    const now = nowET();
+    let lined = d.date !== now.date;
+    for (const ev of matches) {
+      if (!lined && ev.start && minutes(ev.start) > now.mins) {
+        days.append(nowDivider(now));
+        lined = true;
+      }
+      days.append(eventCard(ev));
+    }
+    if (!lined) days.append(nowDivider(now));
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
 }
@@ -580,6 +608,11 @@ function renderTimeline() {
   const day = plan.days.find((d) => d.id === state.timelineDay);
   const pct = (m) => ((Math.min(Math.max(m, LINE_START), LINE_END) - LINE_START) / (LINE_END - LINE_START)) * 100;
 
+  // Red line at the current Orlando time, only on the day being viewed while it is today.
+  const now = nowET();
+  const showNow = day.date === now.date && now.mins >= LINE_START && now.mins <= LINE_END;
+  const nowLine = () => (showNow ? el("div", { class: "tl-now", style: `left:${pct(now.mins)}%` }) : null);
+
   const axis = el("div", { class: "tl-axis" });
   for (let h = 8; h <= 22; h += 2) {
     axis.append(el("span", { style: `left:${pct(h * 60)}%` }, `${h % 12 || 12}${h < 12 ? "a" : "p"}`));
@@ -595,6 +628,7 @@ function renderTimeline() {
       style: `left:${pct(b.start)}%;width:${Math.max(pct(b.end) - pct(b.start), 2)}%`,
       title: `${clock(b.start)} – ${clock(b.end)}`,
     }, b.code === "RES" ? "Resort" : b.code)));
+    lane.append(...[nowLine()].filter(Boolean));
     rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, el("span", { class: "g " + g.id }, g.id)), lane]));
   }
 
@@ -611,7 +645,9 @@ function renderTimeline() {
     class: "tl-block together",
     style: `left:${pct(b.start)}%;width:${Math.max(pct(b.end) - pct(b.start), 2)}%`,
   })));
+  tLane.append(...[nowLine()].filter(Boolean));
   rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, "All"), tLane]));
+  if (showNow) root.append(el("p", { class: "now-label" }, `Now: ${clock(now.mins)}`));
   root.append(el("div", { class: "tl" }, rows));
 
   root.append(el("div", { class: "tl-legend" }, [
@@ -639,26 +675,36 @@ function renderWish() {
   root.replaceChildren();
   const note = waitsNote();
   if (note) root.append(note);
-  const booked = new Set(plan.days.flatMap((d) => d.events).filter((ev) => ev.ride).map((ev) => normName(ev.ride)));
-  for (const park of plan.wishlist) {
-    root.append(dayHeader(park.park));
-    for (const r of park.rides) {
-      const id = "wish-" + normName(r.name);
-      const ride = r.ride || r.name;
-      const tags = [
-        el("span", { class: "tag" }, r.kid),
-        r.pass ? el("span", { class: "tag" }, r.pass) : null,
-        booked.has(normName(ride)) ? el("span", { class: "tag" }, "Proposed in the plan") : null,
-        waitChip(ride),
-      ].filter(Boolean);
-      root.append(el("div", { class: "event " + parkClass(park.park) + (isDone(id) ? " done" : "") }, [
-        el("div", { class: "title" }, r.name),
-        el("div", { class: "tags" }, tags),
-        ...cardActions(id, r.name, park.park),
-      ]));
-    }
+  const planned = plan.days.flatMap((d) => d.events).filter((ev) => ev.ride);
+
+  const card = (r, park, showPark) => {
+    const id = "wish-" + normName(r.name);
+    const ride = r.ride || r.name;
+    const inPlan = planned.find((ev) => normName(r.name).includes(normName(ev.ride)));
+    const tags = [
+      showPark ? el("span", { class: "tag" }, park) : null,
+      el("span", { class: "tag" }, r.kid),
+      r.pass ? el("span", { class: "tag" }, r.pass) : null,
+      inPlan ? el("span", { class: "tag plan" }, inPlan.status === "proposed" ? "Proposed" : "In the plan") : null,
+      waitChip(ride),
+    ].filter(Boolean);
+    return el("div", { class: "event " + parkClass(park) + (isDone(id) ? " done" : "") }, [
+      el("div", { class: "title" }, r.name),
+      el("div", { class: "tags" }, tags),
+      ...cardActions(id, r.name, park, true),
+    ]);
+  };
+
+  // Favorites are pulled out of their park and listed first.
+  const all = plan.wishlist.flatMap((p) => p.rides.map((r) => ({ r, park: p.park })));
+  const favs = all.filter((x) => isFav("wish-" + normName(x.r.name)));
+  if (favs.length) root.append(dayHeader("Favorites"), ...favs.map((x) => card(x.r, x.park, true)));
+  for (const p of plan.wishlist) {
+    const rest = p.rides.filter((r) => !isFav("wish-" + normName(r.name)));
+    if (!rest.length) continue;
+    root.append(dayHeader(p.park), ...rest.map((r) => card(r, p.park, false)));
   }
-  root.append(el("p", { class: "meta" }, "Rides without a Lightning Lane in the plan. Check the Disney app for closures."));
+  root.append(el("p", { class: "meta" }, "Every ride in the four parks. Tap Favorite to move a ride to the top. Check the Disney app for closures."));
 }
 
 // ---------- Calendar export ----------
@@ -825,7 +871,14 @@ function showPlan(decrypted) {
   renderAll();
   loadWaits();
   // Keep the countdowns and live waits current while the page is open.
-  setInterval(() => { if (!document.hidden) renderNow(); }, 30000);
+  // Skipped while a note or the search box is being typed in, so typing is not interrupted.
+  setInterval(() => {
+    const typing = /^(TEXTAREA|INPUT)$/.test((document.activeElement || {}).tagName || "");
+    if (document.hidden || typing) return;
+    renderNow();
+    renderItinerary();
+    renderTimeline();
+  }, 30000);
   setInterval(() => { if (!document.hidden) loadWaits(); }, 5 * 60000);
 }
 
