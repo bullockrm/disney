@@ -183,7 +183,7 @@ button {
 }
 .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
-#search {
+#search, #attr-search {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -524,3 +524,4 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
 .disney-link { display: inline-block; margin-top: 5px; font-size: 0.75rem; color: var(--muted); text-decoration: none; }
 .disney-link:active { color: var(--accent); }
 a.forget { text-decoration: none; display: inline-flex; align-items: center; }
+#attr-search { margin: 0.25rem 0 0.5rem; }

@@ -43,6 +43,7 @@ const state = {
   query: "",
   timelineDay: null,
   attrKind: "ALL",
+  attrQuery: "",
   little: false,
 };
 
@@ -1007,7 +1008,15 @@ function renderWish() {
     chips.append(chip(label, state.attrKind === k, () => { state.attrKind = k; renderWish(); }));
   }
   chips.append(chip("★ Little ones", state.little, () => { state.little = !state.little; renderWish(); }));
-  const shown = (r) => (state.attrKind === "ALL" || (r.kind || "ride") === state.attrKind) && (!state.little || r.little);
+  // Search matches the name, park, height and description, word by word.
+  const words = state.attrQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const parkOf = new Map(plan.wishlist.flatMap((p) => p.rides.map((r) => [r, p.park])));
+  const matches = (r) => {
+    if (!words.length) return true;
+    const hay = [r.name, parkOf.get(r), r.kid, r.about, r.pass, r.kind].join(" ").toLowerCase();
+    return words.every((w) => hay.includes(w));
+  };
+  const shown = (r) => (state.attrKind === "ALL" || (r.kind || "ride") === state.attrKind) && (!state.little || r.little) && matches(r);
 
   const card = (r, park, showPark) => {
     const id = "wish-" + normName(r.name);
@@ -1720,6 +1729,10 @@ function wireTabs() {
       selectTab(btn.dataset.tab);
       window.scrollTo({ top: 0 });
     });
+  });
+  document.getElementById("attr-search").addEventListener("input", (e) => {
+    state.attrQuery = e.target.value;
+    renderWish();
   });
   document.getElementById("search").addEventListener("input", (e) => {
     state.query = e.target.value;
