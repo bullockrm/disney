@@ -76,7 +76,7 @@ async function deriveKey(passcode, enc) {
     baseKey,
     { name: "AES-GCM", length: 256 },
     true,
-    ["decrypt"]
+    ["encrypt", "decrypt"]
   );
 }
 
@@ -104,7 +104,7 @@ function readRemembered(enc) {
 }
 
 async function importRemembered(saved) {
-  return crypto.subtle.importKey("raw", b64ToBytes(saved.key), { name: "AES-GCM" }, false, ["decrypt"]);
+  return crypto.subtle.importKey("raw", b64ToBytes(saved.key), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 async function rememberKey(key, enc) {
@@ -310,7 +310,7 @@ function noteBox(id) {
 
 function swipeHint() {
   if (readStore(HINT_KEY, false)) return null;
-  return el("p", { class: "hint" }, "Tap a card for directions · swipe left for Done · swipe right for a note");
+  return el("p", { class: "hint" }, "Tap a card for directions · swipe left for Done · swipe right for a note · hold to edit");
 }
 
 // Wraps a card so it can be swiped: left marks it done, right opens its note,
@@ -327,7 +327,10 @@ function swipeCard(card, opts) {
   card.classList.add("swipeable");
 
   let x0 = null, y0 = 0, dx = 0, dragging = false, moved = false, pid = null, suppressClick = false;
+  let holdTimer = null;
+  const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
   const reset = () => {
+    cancelHold();
     wrap.classList.remove("dragging", "armed");
     card.style.transform = "";
     x0 = null; dragging = false; dx = 0;
@@ -337,6 +340,18 @@ function swipeCard(card, opts) {
     if (e.target.closest("textarea, button, a, input")) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     x0 = e.clientX; y0 = e.clientY; dx = 0; dragging = false; moved = false; pid = e.pointerId;
+    if (opts.onEdit) {
+      cancelHold();
+      // Press and hold opens the edit sheet.
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        if (moved || dragging) return;
+        x0 = null;
+        suppressClick = true;
+        if (navigator.vibrate) navigator.vibrate(10);
+        opts.onEdit();
+      }, 500);
+    }
   });
   card.addEventListener("pointermove", (e) => {
     if (x0 === null || e.pointerId !== pid) return;
@@ -345,6 +360,7 @@ function swipeCard(card, opts) {
     if (!dragging) {
       if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
       moved = true;
+      cancelHold();
       if (Math.abs(my) > Math.abs(mx)) { x0 = null; return; } // a scroll, not a swipe
       dragging = true;
       try { card.setPointerCapture(pid); } catch { /* pointer already released */ }
@@ -356,6 +372,7 @@ function swipeCard(card, opts) {
     wrap.classList.toggle("armed", Math.abs(dx) >= SWIPE_DISTANCE);
   });
   card.addEventListener("pointerup", () => {
+    cancelHold();
     if (moved) suppressClick = true;
     if (!dragging) { x0 = null; return; }
     const action = dx <= -SWIPE_DISTANCE ? "done" : dx >= SWIPE_DISTANCE ? "note" : null;
@@ -373,6 +390,7 @@ function swipeCard(card, opts) {
     }
   });
   card.addEventListener("pointercancel", reset);
+  card.addEventListener("contextmenu", (e) => { if (opts.onEdit) e.preventDefault(); });
   card.addEventListener("click", (e) => {
     if (suppressClick) { suppressClick = false; return; }
     if (e.target.closest("textarea, button, a, input")) return;
@@ -458,9 +476,12 @@ function eventCard(ev, extra) {
     el("div", { class: "grp" }, groupChips(ev.groups)),
     ev.meet ? el("div", { class: "notes" }, ev.meet) : null,
     ev.notes ? el("div", { class: "notes" }, ev.notes) : null,
-    travel ? null : noteBox(ev.id),
+    noteBox(ev.id),
   ]);
-  return swipeCard(card, travel ? null : { id: ev.id, name: ev.title, location: ev.location });
+  return swipeCard(card, {
+    id: ev.id, name: ev.title, location: travel ? null : ev.location,
+    onEdit: () => openEditor(ev.id),
+  });
 }
 
 // True while a plan is in progress: inside a Lightning Lane window, or during a meal or show.
@@ -503,8 +524,11 @@ function appendDayCards(container, day, events) {
 }
 
 // Sticky date header shared by the lists.
-function dayHeader(label) {
-  return el("h3", { class: "day-h" }, label);
+function dayHeader(label, addDayId) {
+  if (!addDayId) return el("h3", { class: "day-h" }, label);
+  const add = el("button", { type: "button", class: "day-add", "aria-label": "Add to " + label }, "+ Add");
+  add.addEventListener("click", () => openEditor(null, addDayId));
+  return el("h3", { class: "day-h" }, [el("span", {}, label), add]);
 }
 
 function hoursBlock(day) {
@@ -637,7 +661,7 @@ function renderItinerary() {
     shown += matches.length;
     // Headers and cards are direct children of one list, so each sticky header
     // stays pinned until the next day's header slides up over it.
-    days.append(dayHeader(d.label));
+    days.append(dayHeader(d.label, d.id));
     const hours = hoursBlock(d);
     if (hours) days.append(hours);
     const warn = warningList(dayWarnings(d));
@@ -933,6 +957,366 @@ function renderAll() {
   renderOpen();
 }
 
+// ---------- Shared edits ----------
+// The GitHub file is the original plan. Edits are stored separately in Firebase as an
+// encrypted overlay keyed by event id, so different people's edits merge, and the
+// original can be restored. Edits not yet saved (offline) wait on this device.
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBDl6nHDae2U5CyYbQU_Z77w6SHrDVW__A",
+  authDomain: "disney-2026-1447e.firebaseapp.com",
+  projectId: "disney-2026-1447e",
+  storageBucket: "disney-2026-1447e.firebasestorage.app",
+  messagingSenderId: "363822465088",
+  appId: "1:363822465088:web:e97984a0964d914dc9dfa5",
+};
+const PENDING_KEY = "disney-pending-edits";
+const EVENT_TYPES = [
+  ["lightning", "Lightning Lane"],
+  ["dining", "Dining"],
+  ["show", "Show"],
+  ["attraction", "Attraction"],
+  ["travel", "Travel"],
+];
+const PLACES = ["Magic Kingdom", "EPCOT", "Hollywood Studios", "Animal Kingdom", "Caribbean Beach Resort"];
+const DEFAULT_DUR = { lightning: 20, dining: 75, show: 20, attraction: 30, travel: 0 };
+
+let basePlan = null;
+let planKey = null;
+let remoteEdits = {};
+let pendingEdits = readStore(PENDING_KEY, {});
+let fb = null;
+let syncRef = null;
+let syncState = "connecting";
+let flushing = false;
+
+function bytesToB64(bytes) {
+  let bin = "";
+  bytes.forEach((b) => (bin += String.fromCharCode(b)));
+  return btoa(bin);
+}
+
+// Same format as the GitHub file: ciphertext and tag stored separately.
+async function encryptWithKey(key, value) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(value))));
+  return {
+    v: 1,
+    iv: bytesToB64(iv),
+    tag: bytesToB64(sealed.slice(sealed.length - 16)),
+    data: bytesToB64(sealed.slice(0, sealed.length - 16)),
+  };
+}
+
+// Builds the plan shown on screen: the original plan with every edit applied.
+function applyEdits(base, edits) {
+  const p = structuredClone(base);
+  const order = new Map();
+  p.days.forEach((d) => d.events.forEach((ev, i) => order.set(ev.id, i)));
+  for (const d of p.days) d.events = d.events.filter((ev) => !edits[ev.id]);
+  for (const [id, ev] of Object.entries(edits)) {
+    if (ev.deleted) continue;
+    const day = p.days.find((d) => d.id === ev.day) || p.days[0];
+    day.events.push({ ...ev, id });
+  }
+  for (const d of p.days) {
+    d.events.sort((a, b) =>
+      (a.start || "00:00").localeCompare(b.start || "00:00") || (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+  }
+  return p;
+}
+
+function rebuildPlan() {
+  plan = applyEdits(basePlan, { ...remoteEdits, ...pendingEdits });
+}
+
+function editorOpen() {
+  return !document.getElementById("editor").hidden;
+}
+
+function refreshViews() {
+  rebuildPlan();
+  renderAll();
+  renderSyncStatus();
+}
+
+function renderSyncStatus() {
+  const waiting = Object.keys(pendingEdits).length;
+  const text = {
+    connecting: "Connecting…",
+    synced: waiting ? "Saving…" : "✓ Edits synced",
+    saving: "Saving…",
+    offline: waiting ? `Offline · ${waiting} edit${waiting > 1 ? "s" : ""} waiting` : "Offline",
+    error: waiting ? `Sync unavailable · ${waiting} edit${waiting > 1 ? "s" : ""} waiting` : "Sync unavailable",
+  }[syncState];
+  const node = document.getElementById("sync-status");
+  node.textContent = text;
+  node.className = "sync-status " + syncState;
+}
+
+async function startSync() {
+  renderSyncStatus();
+  if (!basePlan.sync_id) { syncState = "error"; renderSyncStatus(); return; }
+  try {
+    fb = await import("./vendor/firebase.js?v=1");
+    const app = fb.initializeApp(FIREBASE_CONFIG);
+    let db;
+    try {
+      db = fb.initializeFirestore(app, {
+        localCache: fb.persistentLocalCache({ tabManager: fb.persistentMultipleTabManager() }),
+      });
+    } catch {
+      db = fb.initializeFirestore(app, { localCache: fb.memoryLocalCache() });
+    }
+    syncRef = fb.doc(db, "plans", basePlan.sync_id);
+    fb.onSnapshot(syncRef, { includeMetadataChanges: true }, async (snap) => {
+      try {
+        remoteEdits = snap.exists() ? (await decryptWithKey(planKey, snap.data())).events || {} : {};
+      } catch {
+        remoteEdits = {};
+      }
+      syncState = snap.metadata.fromCache ? "offline" : "synced";
+      refreshViews();
+      flushEdits();
+    }, () => {
+      syncState = "error";
+      renderSyncStatus();
+    });
+  } catch {
+    syncState = "error";
+    renderSyncStatus();
+  }
+}
+
+// Sends edits waiting on this device. Each save reads the latest shared edits and
+// merges into them, so edits to different items from different phones all survive.
+async function flushEdits() {
+  if (!syncRef || flushing || !Object.keys(pendingEdits).length) return;
+  flushing = true;
+  const sending = structuredClone(pendingEdits);
+  try {
+    if (syncState !== "offline") { syncState = "saving"; renderSyncStatus(); }
+    await withTimeout(fb.runTransaction(syncRef.firestore, async (tx) => {
+      const snap = await tx.get(syncRef);
+      const current = snap.exists() ? (await decryptWithKey(planKey, snap.data())).events || {} : {};
+      const sealed = await encryptWithKey(planKey, { events: { ...current, ...sending } });
+      tx.set(syncRef, { ...sealed, updated: fb.serverTimestamp() });
+    }), 15000);
+    for (const [id, ev] of Object.entries(sending)) {
+      if (JSON.stringify(pendingEdits[id]) === JSON.stringify(ev)) delete pendingEdits[id];
+    }
+    writeStore(PENDING_KEY, pendingEdits);
+    syncState = "synced";
+  } catch {
+    syncState = navigator.onLine ? "error" : "offline";
+  } finally {
+    flushing = false;
+    renderSyncStatus();
+  }
+}
+
+// A save that can't reach the server gives up after a while and is retried later.
+function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))]);
+}
+
+function saveEdit(id, value) {
+  pendingEdits[id] = value;
+  writeStore(PENDING_KEY, pendingEdits);
+  refreshViews();
+  flushEdits();
+}
+
+async function resetEdits() {
+  pendingEdits = {};
+  writeStore(PENDING_KEY, pendingEdits);
+  if (syncRef) {
+    try {
+      const sealed = await encryptWithKey(planKey, { events: {} });
+      await withTimeout(fb.runTransaction(syncRef.firestore, async (tx) => {
+        await tx.get(syncRef);
+        tx.set(syncRef, { ...sealed, updated: fb.serverTimestamp() });
+      }), 15000);
+      remoteEdits = {};
+    } catch {
+      syncState = "error";
+    }
+  }
+  refreshViews();
+}
+
+window.addEventListener("online", flushEdits);
+setInterval(flushEdits, 30000);
+
+// ---------- Edit sheet ----------
+
+function to24(text) {
+  const m = (text || "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!m) return "";
+  let h = +m[1] % 12;
+  if (/pm/i.test(m[3])) h += 12;
+  return String(h).padStart(2, "0") + ":" + m[2];
+}
+
+function timeLabel(start, end, second, fallback) {
+  if (!start) return fallback || "Any time";
+  const a = clock(minutes(start));
+  if (end) return `${a} – ${clock(minutes(end))}`;
+  if (second) {
+    const b = clock(minutes(second));
+    return a.slice(-2) === b.slice(-2) ? `${a.slice(0, -3)} / ${b}` : `${a} / ${b}`;
+  }
+  return a;
+}
+
+function field(label, input, cls) {
+  return el("label", { class: "ed-field" + (cls ? " " + cls : "") }, [el("span", {}, label), input]);
+}
+
+// Opens the edit sheet for an existing item, or a blank one for a new item on a day.
+function openEditor(eventId, dayId) {
+  const sheet = document.getElementById("editor");
+  const day = plan.days.find((d) => d.events.some((ev) => ev.id === eventId)) || plan.days.find((d) => d.id === dayId);
+  const original = day.events.find((ev) => ev.id === eventId);
+  const ev = original || {
+    title: "", type: "attraction", location: "", notes: "",
+    groups: state.group === "ALL" ? plan.groups.map((g) => g.id) : [state.group],
+  };
+  const id = eventId || "x-" + crypto.getRandomValues(new Uint32Array(2)).join("");
+  const split = (ev.time || "").includes(" / ");
+
+  const title = el("input", { type: "text", required: "" }); title.value = ev.title;
+  const daySel = el("select", {}, plan.days.map((d) => el("option", { value: d.id }, d.label)));
+  daySel.value = day.id;
+  const typeSel = el("select", {}, EVENT_TYPES.map(([v, t]) => el("option", { value: v }, t)));
+  typeSel.value = ev.type;
+  const start = el("input", { type: "time" }); start.value = ev.start || "";
+  const end = el("input", { type: "time" });
+  end.value = ev.end || (ev.start && ev.dur ? clockTo24(minutes(ev.start) + ev.dur) : "");
+  const second = el("input", { type: "time" }); second.value = split ? to24(ev.time.split(" / ")[1]) : "";
+  if (split) end.value = "";
+  const loc = el("input", { type: "text", list: "ed-places" }); loc.value = ev.location || "";
+  const places = el("datalist", { id: "ed-places" }, PLACES.map((p) => el("option", { value: p })));
+  const rides = plan.wishlist.flatMap((p) => p.rides.map((r) => r.ride || r.name));
+  const rideSel = el("select", {}, [el("option", { value: "" }, "None"),
+    ...plan.wishlist.flatMap((p) => p.rides.map((r) => el("option", { value: r.ride || r.name }, r.name)))]);
+  rideSel.value = rides.includes(ev.ride) ? ev.ride : "";
+  const notes = el("textarea", { rows: "2" }); notes.value = ev.notes || "";
+  const proposed = el("input", { type: "checkbox" }); proposed.checked = ev.status === "proposed";
+  const groupBoxes = plan.groups.map((g) => {
+    const box = el("input", { type: "checkbox", value: g.id });
+    box.checked = ev.groups.includes(g.id) || ev.groups.includes("ALL");
+    return el("label", { class: "ed-group" }, [box, el("span", { class: "g " + g.id }, g.id)]);
+  });
+  const error = el("p", { class: "ed-error", hidden: "" });
+
+  const endField = field("Ends", end);
+  const secondField = field("Second seating", second);
+  const rideField = field("Ride (for wait times and Attractions)", rideSel);
+  const syncFields = () => {
+    const t = typeSel.value;
+    endField.firstChild.textContent = t === "lightning" ? "Window ends" : "Ends";
+    secondField.hidden = t !== "dining";
+    rideField.hidden = !(t === "lightning" || t === "attraction");
+  };
+  typeSel.addEventListener("change", syncFields);
+  syncFields();
+
+  const close = () => { sheet.hidden = true; sheet.replaceChildren(); };
+  const save = () => {
+    const groups = groupBoxes.map((l) => l.firstChild).filter((b) => b.checked).map((b) => b.value);
+    if (!title.value.trim()) { error.textContent = "Add a title."; error.hidden = false; return; }
+    if (!groups.length) { error.textContent = "Pick at least one group."; error.hidden = false; return; }
+    if (end.value && start.value && end.value <= start.value) {
+      error.textContent = "The end time must be after the start."; error.hidden = false; return;
+    }
+    const t = typeSel.value;
+    const lane = t === "lightning" && end.value;
+    const twoSeatings = t === "dining" && second.value && !end.value;
+    const next = {
+      ...(original || {}),
+      day: daySel.value,
+      title: title.value.trim(),
+      type: t,
+      groups,
+      location: loc.value.trim(),
+      notes: notes.value.trim(),
+      start: start.value || null,
+      end: lane ? end.value : null,
+      dur: !lane && start.value && end.value ? minutes(end.value) - minutes(start.value) : (original && original.type === t ? original.dur : DEFAULT_DUR[t]),
+      time: timeLabel(start.value, lane ? end.value : null, twoSeatings ? second.value : null,
+        !start.value && original ? original.time : null),
+      ride: rideField.hidden ? null : rideSel.value || null,
+    };
+    if (!lane && t !== "lightning" && end.value) next.time = timeLabel(start.value, end.value, null);
+    if (proposed.checked) next.status = "proposed"; else delete next.status;
+    delete next.id;
+    close();
+    saveEdit(id, next);
+  };
+
+  const buttons = [
+    original ? el("button", { type: "button", class: "ed-btn danger" }, "Delete") : null,
+    el("span", { class: "ed-spacer" }),
+    el("button", { type: "button", class: "ed-btn" }, "Cancel"),
+    el("button", { type: "button", class: "ed-btn primary" }, "Save"),
+  ].filter(Boolean);
+  const [del] = original ? buttons : [null];
+  if (del) {
+    del.addEventListener("click", () => {
+      if (del.dataset.armed) { close(); saveEdit(id, { deleted: true, day: day.id }); return; }
+      del.dataset.armed = "1";
+      del.textContent = "Tap again to delete";
+    });
+  }
+  buttons[buttons.length - 2].addEventListener("click", close);
+  buttons[buttons.length - 1].addEventListener("click", save);
+
+  const panel = el("div", { class: "ed-panel", role: "dialog", "aria-modal": "true", "aria-label": original ? "Edit plan item" : "Add plan item" }, [
+    el("h2", {}, original ? "Edit" : "Add to " + day.label),
+    field("Title", title),
+    el("div", { class: "ed-row" }, [field("Day", daySel), field("Type", typeSel)]),
+    el("div", { class: "ed-row" }, [field("Starts", start), endField, secondField]),
+    el("div", { class: "ed-field" }, [el("span", {}, "Groups"), el("div", { class: "ed-groups" }, groupBoxes)]),
+    field("Location", loc),
+    places,
+    rideField,
+    field("Notes", notes),
+    el("label", { class: "ed-check" }, [proposed, " Proposed, not booked yet"]),
+    error,
+    el("p", { class: "ed-meta" }, "Changes go to everyone's phones. They don't change anything in the Disney app."),
+    el("div", { class: "ed-buttons" }, buttons),
+  ]);
+  sheet.replaceChildren(el("div", { class: "ed-backdrop" }), panel);
+  sheet.firstChild.addEventListener("click", close);
+  sheet.hidden = false;
+  if (!original) title.focus();
+}
+
+function clockTo24(mins) {
+  return String(Math.floor(mins / 60) % 24).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0");
+}
+
+function openResetConfirm() {
+  const sheet = document.getElementById("editor");
+  const count = Object.keys({ ...remoteEdits, ...pendingEdits }).length;
+  const cancel = el("button", { type: "button", class: "ed-btn" }, "Cancel");
+  const go = el("button", { type: "button", class: "ed-btn danger" }, "Undo all edits");
+  const close = () => { sheet.hidden = true; sheet.replaceChildren(); };
+  cancel.addEventListener("click", close);
+  go.addEventListener("click", () => { close(); resetEdits(); });
+  sheet.replaceChildren(el("div", { class: "ed-backdrop" }), el("div", { class: "ed-panel", role: "dialog", "aria-modal": "true" }, [
+    el("h2", {}, "Undo all edits?"),
+    el("p", {}, count
+      ? `This removes ${count} edit${count > 1 ? "s" : ""} for everyone and puts back the original plan. It can't be undone.`
+      : "There are no edits to undo."),
+    el("div", { class: "ed-buttons" }, [el("span", { class: "ed-spacer" }), cancel, count ? go : null].filter(Boolean)),
+  ]));
+  sheet.firstChild.addEventListener("click", close);
+  sheet.hidden = false;
+}
+
 // ---------- Theme ----------
 
 function applyTheme(name) {
@@ -951,6 +1335,25 @@ function wireTheme() {
   let saved = null;
   try { saved = localStorage.getItem(THEME_KEY); } catch { /* storage unavailable */ }
   applyTheme(saved);
+}
+
+// Dark mode works with every theme. It follows the phone's setting until toggled.
+const MODE_KEY = "disney-mode";
+function applyMode(dark) {
+  if (dark) document.documentElement.dataset.mode = "dark";
+  else delete document.documentElement.dataset.mode;
+  const btn = document.getElementById("mode-toggle");
+  btn.setAttribute("aria-pressed", String(dark));
+  btn.textContent = dark ? "☀" : "☾";
+  btn.setAttribute("aria-label", dark ? "Light mode" : "Dark mode");
+}
+function wireMode() {
+  applyMode(document.documentElement.dataset.mode === "dark");
+  document.getElementById("mode-toggle").addEventListener("click", () => {
+    const dark = document.documentElement.dataset.mode !== "dark";
+    applyMode(dark);
+    try { localStorage.setItem(MODE_KEY, dark ? "dark" : "light"); } catch { /* storage unavailable */ }
+  });
 }
 
 // ---------- Navigation and unlock ----------
@@ -1003,8 +1406,10 @@ function wireKeypad() {
   });
 }
 
-function showPlan(decrypted) {
-  plan = decrypted;
+function showPlan(decrypted, key) {
+  basePlan = decrypted;
+  planKey = key;
+  rebuildPlan();
   if (state.group !== "ALL" && !plan.groups.some((g) => g.id === state.group)) state.group = "ALL";
   document.getElementById("lock").hidden = true;
   document.getElementById("app").hidden = false;
@@ -1012,11 +1417,12 @@ function showPlan(decrypted) {
   renderAll();
   syncNowTab(true);
   loadWaits();
+  startSync();
   // Keep the countdowns and live waits current while the page is open.
   // Skipped while a note or the search box is being typed in, so typing is not interrupted.
   setInterval(() => {
     const typing = /^(TEXTAREA|INPUT)$/.test((document.activeElement || {}).tagName || "");
-    if (document.hidden || typing || document.querySelector(".swipe.dragging")) return;
+    if (document.hidden || typing || editorOpen() || document.querySelector(".swipe.dragging")) return;
     syncNowTab(false);
     renderNow();
     renderItinerary();
@@ -1044,7 +1450,7 @@ async function tryRemembered() {
     const saved = readRemembered(enc);
     if (!saved) return;
     const key = await importRemembered(saved);
-    showPlan(await decryptWithKey(key, enc));
+    showPlan(await decryptWithKey(key, enc), key);
   } catch {
     // Remembered key is stale or unreadable: fall back to the passcode screen.
     localStorage.removeItem(REMEMBER_KEY);
@@ -1064,7 +1470,7 @@ async function unlock(event) {
     if (remember) await rememberKey(key, enc);
     input.value = "";
     renderDots();
-    showPlan(decrypted);
+    showPlan(decrypted, key);
   } catch (err) {
     error.hidden = false;
     input.value = "";
@@ -1080,8 +1486,10 @@ if ("serviceWorker" in navigator) {
 document.getElementById("unlock-form").addEventListener("submit", unlock);
 document.getElementById("forget").addEventListener("click", forgetDevice);
 document.getElementById("refresh").addEventListener("click", () => location.reload());
+document.getElementById("reset-edits").addEventListener("click", openResetConfirm);
 wireKeypad();
 renderDots();
 wireTabs();
 wireTheme();
+wireMode();
 tryRemembered();
