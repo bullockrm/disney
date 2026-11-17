@@ -1343,6 +1343,7 @@ let fb = null;
 let syncRef = null;
 let syncState = "connecting";
 let flushing = false;
+let syncError = null;
 
 function bytesToB64(bytes) {
   let bin = "";
@@ -1405,7 +1406,7 @@ function renderSyncStatus() {
     error: waiting ? `Sync unavailable · ${waiting} edit${waiting > 1 ? "s" : ""} waiting` : "Sync unavailable",
   }[syncState];
   const node = document.getElementById("sync-status");
-  node.textContent = text;
+  node.textContent = text + (syncState === "error" && syncError ? ` (${syncError}) · tap to retry` : "");
   node.className = "sync-status " + syncState;
 }
 
@@ -1433,14 +1434,21 @@ async function startSync() {
       syncState = snap.metadata.fromCache ? "offline" : "synced";
       refreshViews();
       flushEdits();
-    }, () => {
+    }, (err) => {
+      syncError = errorCode(err);
       syncState = "error";
       renderSyncStatus();
     });
-  } catch {
+  } catch (err) {
+    syncError = errorCode(err);
     syncState = "error";
     renderSyncStatus();
   }
+}
+
+// Short reason from a Firebase error, such as "permission-denied", shown in the footer.
+function errorCode(err) {
+  return (err && (err.code || err.message) || "unknown").toString().replace(/^firestore\//, "").slice(0, 60);
 }
 
 // Sends edits waiting on this device. Each save reads the latest shared edits and
@@ -1462,7 +1470,9 @@ async function flushEdits() {
     }
     writeStore(PENDING_KEY, pendingEdits);
     syncState = "synced";
-  } catch {
+    syncError = null;
+  } catch (err) {
+    syncError = errorCode(err);
     syncState = navigator.onLine ? "error" : "offline";
   } finally {
     flushing = false;
@@ -1861,6 +1871,7 @@ document.getElementById("unlock-form").addEventListener("submit", unlock);
 document.getElementById("forget").addEventListener("click", forgetDevice);
 document.getElementById("refresh").addEventListener("click", () => location.reload());
 document.getElementById("reset-edits").addEventListener("click", openResetConfirm);
+document.getElementById("sync-status").addEventListener("click", () => { if (syncState === "error") flushEdits(); });
 wireKeypad();
 renderDots();
 wireTabs();
