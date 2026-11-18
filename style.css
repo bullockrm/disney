@@ -351,7 +351,6 @@ li { margin-bottom: 0.3rem; }
 .hours { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.5rem; }
 .hours-note { font-style: italic; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--park, var(--line)); margin-right: 6px; }
-.dot.together, .tl-block.together { background: #f5c451; }
 .warn-box {
   border: 1px solid var(--warn);
   border-radius: 10px;

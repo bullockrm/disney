@@ -900,20 +900,9 @@ function renderTimeline() {
   }
   const rows = [el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }), axis])];
 
+  // Each group's park blocks, then the stretches when every group is in the same place.
   const perGroup = {};
-  for (const g of plan.groups) {
-    const blocks = parkBlocks(day, g.id);
-    perGroup[g.id] = blocks;
-    const lane = el("div", { class: "tl-lane" }, blocks.map((b) => el("div", {
-      class: "tl-block p-" + b.code,
-      style: `left:${pct(b.start)}%;width:${Math.max(pct(b.end) - pct(b.start), 2)}%`,
-      title: `${clock(b.start)} – ${clock(b.end)}`,
-    }, b.code === "RES" ? "Resort" : b.code)));
-    lane.append(...[nowLine()].filter(Boolean));
-    rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, el("span", { class: "g " + g.id }, g.id)), lane]));
-  }
-
-  // Stretches when every group is in the same place.
+  for (const g of plan.groups) perGroup[g.id] = parkBlocks(day, g.id);
   const together = [];
   let open = null;
   for (let m = LINE_START; m <= LINE_END; m += 5) {
@@ -922,21 +911,42 @@ function renderTimeline() {
     if (same && !open) open = { start: m, code: codes[0] };
     if ((!same || m === LINE_END) && open) { together.push({ ...open, end: m }); open = null; }
   }
-  const tLane = el("div", { class: "tl-lane" }, together.map((b) => el("div", {
-    class: "tl-block together",
+
+  // Time together shows once, on the All row, so it's cut out of each group's row.
+  const apart = (blocks) => blocks.flatMap((b) => {
+    let pieces = [{ ...b }];
+    for (const t of together) {
+      pieces = pieces.flatMap((p) => {
+        if (t.end <= p.start || t.start >= p.end) return [p];
+        const out = [];
+        if (p.start < t.start) out.push({ ...p, end: t.start });
+        if (p.end > t.end) out.push({ ...p, start: t.end });
+        return out;
+      });
+    }
+    return pieces.filter((p) => p.end - p.start >= 5);
+  });
+  const block = (b) => el("div", {
+    class: "tl-block p-" + b.code,
     style: `left:${pct(b.start)}%;width:${Math.max(pct(b.end) - pct(b.start), 2)}%`,
-  })));
+    title: `${clock(b.start)} – ${clock(b.end)}`,
+  }, b.code === "RES" ? "Resort" : b.code);
+
+  for (const g of plan.groups) {
+    const lane = el("div", { class: "tl-lane" }, apart(perGroup[g.id]).map(block));
+    lane.append(...[nowLine()].filter(Boolean));
+    rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, el("span", { class: "g " + g.id }, g.id)), lane]));
+  }
+  const tLane = el("div", { class: "tl-lane" }, together.map(block));
   tLane.append(...[nowLine()].filter(Boolean));
-  rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, "All"), tLane]));
+  rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, el("span", { class: "g ALL" }, "All")), tLane]));
   if (showNow) root.append(el("p", { class: "now-label" }, `Now: ${clock(now.mins)}`));
   root.append(el("div", { class: "tl" }, rows));
 
-  root.append(el("div", { class: "tl-legend" }, [
-    ...PARKS.map(([name, code]) => el("span", {}, [el("span", { class: "dot p-" + code }), name])),
-    el("span", {}, [el("span", { class: "dot together" }), "Everyone together"]),
-  ]));
+  root.append(el("div", { class: "tl-legend" },
+    PARKS.map(([name, code]) => el("span", {}, [el("span", { class: "dot p-" + code }), name]))));
   root.append(together.length
-    ? el("p", { class: "meta" }, "Together: " + together.map((b) => `${clock(b.start)} – ${clock(b.end)}`).join(", "))
+    ? el("p", { class: "meta" }, "All together: " + together.map((b) => `${parkName(b.code) || "Resort"} ${clock(b.start)} – ${clock(b.end)}`).join(", "))
     : el("p", { class: "meta" }, "No stretch on this day has every group in the same place."));
 
 
