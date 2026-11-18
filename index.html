@@ -17,7 +17,7 @@
       if (localStorage.getItem("disney-compact") === "1") document.documentElement.dataset.compact = "1";
     } catch (e) { /* storage unavailable */ }
   </script>
-  <link rel="stylesheet" href="style.css?v=32">
+  <link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -58,14 +58,12 @@
         </div>
       </div>
       <div class="hdr-right">
-        <div class="swatches" role="group" aria-label="Site theme">
+        <div class="hdr-controls" role="group" aria-label="Theme and display">
           <button type="button" class="swatch" data-theme="sunset" aria-label="Sunset theme" aria-pressed="false"></button>
-          <button type="button" class="swatch" data-theme="castle" aria-label="Castle blue theme" aria-pressed="false"></button>
-          <button type="button" class="swatch" data-theme="teal" aria-label="Tomorrowland teal theme" aria-pressed="false"></button>
-        </div>
-        <div class="toggles">
           <button type="button" class="mode-toggle" id="compact-toggle" aria-label="Compact cards" aria-pressed="false">☰</button>
+          <button type="button" class="swatch" data-theme="castle" aria-label="Castle blue theme" aria-pressed="false"></button>
           <button type="button" class="mode-toggle" id="mode-toggle" aria-label="Dark mode" aria-pressed="false">☾</button>
+          <button type="button" class="swatch" data-theme="teal" aria-label="Tomorrowland teal theme" aria-pressed="false"></button>
         </div>
       </div>
     </header>

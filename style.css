@@ -62,9 +62,21 @@ header {
 header h1 { font-size: 1rem; line-height: 1.2; }
 header .sub { margin: 2px 0 0; opacity: 0.9; font-size: 0.75rem; }
 /* Theme swatches on the first line, compact and dark mode toggles on the second. */
-.hdr-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
-.toggles { display: flex; gap: 6px; }
-.swatches { display: flex; gap: 6px; }
+/* Zig-zag: theme swatches on the top line, the two toggles tucked between them below. */
+.hdr-right { flex: none; }
+.hdr-controls {
+  display: grid;
+  grid-template-columns: repeat(6, 15px);
+  grid-template-rows: 24px 24px;
+  row-gap: 4px;
+  justify-items: center;
+}
+.hdr-controls .swatch, .hdr-controls .mode-toggle { width: 24px; height: 24px; grid-column-end: span 2; }
+.hdr-controls .swatch[data-theme="sunset"] { grid-row: 1; grid-column-start: 1; }
+.hdr-controls .swatch[data-theme="castle"] { grid-row: 1; grid-column-start: 3; }
+.hdr-controls .swatch[data-theme="teal"] { grid-row: 1; grid-column-start: 5; }
+.hdr-controls #compact-toggle { grid-row: 2; grid-column-start: 2; }
+.hdr-controls #mode-toggle { grid-row: 2; grid-column-start: 4; }
 .swatch {
   width: 22px; height: 22px; border-radius: 50%; padding: 0;
   border: 2px solid rgba(255, 255, 255, 0.9);
