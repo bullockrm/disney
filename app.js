@@ -856,10 +856,27 @@ function renderItinerary() {
 const LINE_START = 8 * 60;
 const LINE_END = 22 * 60;
 
-// Park blocks for one group: each reachable stop holds its park until the next stop.
+// Where a plan item is: a park code, RES for the resort, or TRV for flights and travel.
+function placeCode(location) {
+  const code = parkCode(location);
+  if (code) return code;
+  if (/resort|caribbean|hotel/i.test(location || "")) return "RES";
+  return "TRV";
+}
+
+// Place blocks for one group: each stop holds its place until the next stop.
+// Reachable plans come from the timing check, and travel is added at its own times.
 function parkBlocks(day, groupId) {
-  const stops = walkDay(day, groupId).reached
-    .map((r) => ({ ...r, code: parkCode(r.ev.location) || "RES" }));
+  const reached = walkDay(day, groupId).reached
+    .map((r) => ({ arrive: r.arrive, leave: r.leave, code: placeCode(r.ev.location), proposed: false }));
+  const extra = day.events
+    .filter((ev) => ev.start && ev.groups.includes(groupId) && ev.type === "travel" && ev.status !== "proposed")
+    .map((ev) => {
+      const at = minutes(ev.start);
+      const until = ev.end ? minutes(ev.end) : at + Math.max(ev.dur || 0, 30);
+      return { arrive: at, leave: until, code: placeCode(ev.location), proposed: false };
+    });
+  const stops = [...reached, ...extra].sort((a, b) => a.arrive - b.arrive);
   const blocks = [];
   stops.forEach((s, i) => {
     const next = stops[i + 1];
@@ -867,9 +884,20 @@ function parkBlocks(day, groupId) {
     if (next) end = next.code === s.code ? next.arrive : Math.max(s.leave, next.arrive - PARK_TRANSFER);
     const last = blocks[blocks.length - 1];
     if (last && last.code === s.code && last.end >= s.arrive) last.end = Math.max(last.end, end);
-    else blocks.push({ code: s.code, start: s.arrive, end: Math.max(end, s.arrive + 15) });
+    else blocks.push({ code: s.code, proposed: false, start: s.arrive, end: Math.max(end, s.arrive + 15) });
   });
   return blocks;
+}
+
+// Proposed plans for one group, drawn dashed on top of the group's row for just their
+// own time. They don't move anyone's place or count toward being together.
+function proposedBlocks(day, groupId) {
+  return day.events
+    .filter((ev) => ev.start && ev.status === "proposed" && ev.groups.includes(groupId))
+    .map((ev) => {
+      const at = minutes(ev.start);
+      return { code: placeCode(ev.location), proposed: true, start: at, end: ev.end ? minutes(ev.end) : at + Math.max(ev.dur || 0, 30) };
+    });
 }
 
 function renderTimeline() {
@@ -926,13 +954,13 @@ function renderTimeline() {
     return pieces.filter((p) => p.end - p.start >= 5);
   });
   const block = (b) => el("div", {
-    class: "tl-block p-" + b.code,
+    class: "tl-block p-" + b.code + (b.proposed ? " proposed" : ""),
     style: `left:${pct(b.start)}%;width:${Math.max(pct(b.end) - pct(b.start), 2)}%`,
-    title: `${clock(b.start)} – ${clock(b.end)}`,
-  }, b.code === "RES" ? "Resort" : b.code);
+    title: `${clock(b.start)} – ${clock(b.end)}${b.proposed ? " (proposed)" : ""}`,
+  }, b.code === "TRV" ? "✈" : b.code === "RES" ? (pct(b.end) - pct(b.start) < 12 ? "Res" : "Resort") : b.code);
 
   for (const g of plan.groups) {
-    const lane = el("div", { class: "tl-lane" }, apart(perGroup[g.id]).map(block));
+    const lane = el("div", { class: "tl-lane" }, [...apart(perGroup[g.id]), ...proposedBlocks(day, g.id)].map(block));
     lane.append(...[nowLine()].filter(Boolean));
     rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, el("span", { class: "g " + g.id }, g.id)), lane]));
   }
@@ -942,10 +970,14 @@ function renderTimeline() {
   if (showNow) root.append(el("p", { class: "now-label" }, `Now: ${clock(now.mins)}`));
   root.append(el("div", { class: "tl" }, rows));
 
-  root.append(el("div", { class: "tl-legend" },
-    PARKS.map(([name, code]) => el("span", {}, [el("span", { class: "dot p-" + code }), name]))));
+  root.append(el("div", { class: "tl-legend" }, [
+    ...PARKS.map(([name, code]) => el("span", {}, [el("span", { class: "dot p-" + code }), name])),
+    el("span", {}, [el("span", { class: "dot p-RES" }), "Resort"]),
+    el("span", {}, [el("span", { class: "dot p-TRV" }), "Travel"]),
+    el("span", {}, [el("span", { class: "dot legend-proposed" }), "Proposed"]),
+  ]));
   root.append(together.length
-    ? el("p", { class: "meta" }, "All together: " + together.map((b) => `${parkName(b.code) || "Resort"} ${clock(b.start)} – ${clock(b.end)}`).join(", "))
+    ? el("p", { class: "meta" }, "All together: " + together.map((b) => `${b.code === "RES" ? "Resort" : b.code === "TRV" ? "Travel" : parkName(b.code)} ${clock(b.start)} – ${clock(b.end)}`).join(", "))
     : el("p", { class: "meta" }, "No stretch on this day has every group in the same place."));
 
 
