@@ -284,25 +284,24 @@ function saveNote(id, text) {
   writeStore(NOTES_KEY, notes);
 }
 
-// On an iPhone, open the Maps app directly with the maps: link. Opening a new
-// window from a home-screen web app leaves iOS on a blank page when you come back.
-function isIOS() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+// On Apple devices (iPhone, iPad and Mac) open the Maps app directly with a maps:
+// link. A new browser window leaves a blank tab behind, and the Apple Maps website
+// doesn't handle these directions. Other devices get Google Maps in the browser.
+function isApple() {
+  return /iPad|iPhone|iPod|Macintosh|Mac OS X/.test(navigator.userAgent);
 }
 function openDirections(name, location) {
-  const url = mapsUrl(name, location);
-  if (isIOS()) {
-    window.location.href = url.replace("https://maps.apple.com/", "maps://");
+  const query = mapsQuery(name, location);
+  if (isApple()) {
+    window.location.href = "maps://?daddr=" + encodeURIComponent(query) + "&dirflg=w";
     return;
   }
-  window.open(url, "_blank", "noopener");
+  window.open("https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=" + encodeURIComponent(query), "_blank", "noopener");
 }
 
-function mapsUrl(name, location) {
-  const clean = name.replace(/\s*\(.*?\)/g, "").replace(/^(Lunch|Dinner) at /, "").replace(/ LL$/, "");
-  // Apple Maps walking directions; on an iPhone this opens the Maps app.
-  return "https://maps.apple.com/?daddr=" +
-    encodeURIComponent(`${clean}, ${location}, Walt Disney World`) + "&dirflg=w";
+function mapsQuery(name, location) {
+  const clean = name.replace(/\s*\(.*?\)/g, "").replace(/^(Breakfast|Lunch|Dinner) at /, "").replace(/ LL$/, "");
+  return `${clean}, ${location}, Walt Disney World`;
 }
 
 // Done checkbox, personal note and directions link. Marks and notes stay on this device.
