@@ -1584,12 +1584,34 @@ function openEditor(eventId, dayId) {
   end.value = ev.end || (ev.start && ev.dur ? clockTo24(minutes(ev.start) + ev.dur) : "");
   const second = el("input", { type: "time" }); second.value = split ? to24(ev.time.split(" / ")[1]) : "";
   if (split) end.value = "";
-  const loc = el("input", { type: "text", list: "ed-places" }); loc.value = ev.location || "";
-  const places = el("datalist", { id: "ed-places" }, PLACES.map((p) => el("option", { value: p })));
-  const rides = plan.wishlist.flatMap((p) => p.rides.map((r) => r.ride || r.name));
-  const rideSel = el("select", {}, [el("option", { value: "" }, "None"),
-    ...plan.wishlist.flatMap((p) => p.rides.map((r) => el("option", { value: r.ride || r.name }, r.name)))]);
-  rideSel.value = rides.includes(ev.ride) ? ev.ride : "";
+  // Location is a list of parks and the resort; "Other" lets you type a place.
+  const placeOf = (text) => {
+    const code = parkCode(text || "");
+    if (code) return parkName(code);
+    if (/caribbean/i.test(text || "")) return "Caribbean Beach Resort";
+    return text ? "Other" : "";
+  };
+  const startPlace = placeOf(ev.location);
+  const locSel = el("select", {}, [el("option", { value: "" }, "Choose…"),
+    ...PLACES.map((p) => el("option", { value: p }, p)), el("option", { value: "Other" }, "Other")]);
+  locSel.value = startPlace;
+  const locOther = el("input", { type: "text", placeholder: "Where is it?" });
+  locOther.value = startPlace === "Other" ? ev.location : "";
+
+  // What kind of attraction, then the attraction or restaurant itself.
+  const known = attractionFor(ev);
+  const kindSel = el("select", {}, ATTR_KINDS.filter(([k]) => k !== "ALL").map(([k, label]) => el("option", { value: k }, label)));
+  kindSel.value = (known && known.kind) || (ev.type === "show" ? "show" : "ride");
+  const pickSel = el("select");
+  const findRestaurant = (title) => {
+    const t = normName(title || "");
+    for (const list of Object.values(plan.restaurants || {})) {
+      const hit = list.find((n) => t.includes(normName(n).replace(/restaurant$/, "")));
+      if (hit) return hit;
+    }
+    return "";
+  };
+  let pickStart = ev.type === "dining" ? findRestaurant(ev.title) : known ? known.name : "";
   const notes = el("textarea", { rows: "2" }); notes.value = ev.notes || "";
   const proposed = el("input", { type: "checkbox" }); proposed.checked = ev.status === "proposed";
   const groupBoxes = plan.groups.map((g) => {
@@ -1601,14 +1623,75 @@ function openEditor(eventId, dayId) {
 
   const endField = field("Ends", end);
   const secondField = field("Second seating", second);
-  const rideField = field("Attraction (for wait times and the Attractions tab)", rideSel);
+  const otherField = field("Place", locOther);
+  const kindField = field("Kind", kindSel);
+  const pickField = field("Attraction", pickSel);
+  const isFun = () => ["lightning", "attraction", "show"].includes(typeSel.value);
+
+  // The list follows the type, kind and location, sorted A to Z.
+  const sortName = (n) => n.replace(/^the\s+/i, "").toLowerCase();
+  const byName = (a, b) => sortName(a).localeCompare(sortName(b));
+  const fillPick = () => {
+    const keep = pickSel.value || pickStart;
+    pickStart = "";
+    const place = locSel.value;
+    const parks = place && place !== "Other" ? [place] : [...plan.wishlist.map((p) => p.park), "Caribbean Beach Resort"];
+    const groups = [];
+    for (const park of parks) {
+      let names = [];
+      if (typeSel.value === "dining") names = (plan.restaurants || {})[park] || [];
+      else {
+        const p = plan.wishlist.find((x) => x.park === park);
+        names = p ? p.rides.filter((r) => (r.kind || "ride") === kindSel.value).map((r) => r.name) : [];
+      }
+      if (names.length) groups.push([park, [...names].sort(byName)]);
+    }
+    const opts = (names) => names.map((n) => el("option", { value: n }, n));
+    pickSel.replaceChildren(el("option", { value: "" }, groups.length ? "Choose…" : "Nothing listed here"),
+      ...(groups.length === 1 ? opts(groups[0][1]) : groups.map(([park, names]) => el("optgroup", { label: park }, opts(names)))));
+    pickSel.value = groups.some(([, names]) => names.includes(keep)) ? keep : "";
+  };
+
+  // The title fills in from the pick until it's typed over.
+  let autoTitle = !original || !title.value.trim();
+  const mealWord = () => {
+    const m = minutes(start.value);
+    if (m == null) return null;
+    return m < 10 * 60 + 30 ? "Breakfast" : m < 16 * 60 ? "Lunch" : "Dinner";
+  };
+  const suggestTitle = () => {
+    if (!autoTitle || !pickSel.value) return;
+    const word = typeSel.value === "dining" ? mealWord() : null;
+    const place = pickSel.value.replace(/\s+Restaurant$/i, "");
+    title.value = word ? `${word} at ${place}` : pickSel.value;
+  };
+  title.addEventListener("input", () => { autoTitle = !title.value.trim(); });
+
   const syncFields = () => {
     const t = typeSel.value;
     endField.firstChild.textContent = t === "lightning" ? "Window ends" : "Ends";
     secondField.hidden = t !== "dining";
-    rideField.hidden = !(t === "lightning" || t === "attraction" || t === "show");
+    otherField.hidden = locSel.value !== "Other";
+    kindField.hidden = !isFun();
+    pickField.hidden = !(isFun() || t === "dining");
+    pickField.firstChild.textContent = t === "dining" ? "Restaurant" : (ATTR_KINDS.find(([k]) => k === kindSel.value) || [, "Attraction"])[1].replace(/s$/, "");
+    fillPick();
   };
-  typeSel.addEventListener("change", syncFields);
+  typeSel.addEventListener("change", () => {
+    if (typeSel.value === "show") kindSel.value = "show";
+    syncFields();
+  });
+  kindSel.addEventListener("change", syncFields);
+  locSel.addEventListener("change", syncFields);
+  pickSel.addEventListener("change", () => {
+    // Picking from the full list also sets the location.
+    if (pickSel.value && (!locSel.value || locSel.value === "Other")) {
+      const group = pickSel.selectedOptions[0].parentElement;
+      if (group && group.tagName === "OPTGROUP") { locSel.value = group.label; syncFields(); }
+    }
+    suggestTitle();
+  });
+  start.addEventListener("change", suggestTitle);
   syncFields();
 
   const close = () => { sheet.hidden = true; sheet.replaceChildren(); };
@@ -1628,14 +1711,17 @@ function openEditor(eventId, dayId) {
       title: title.value.trim(),
       type: t,
       groups,
-      location: loc.value.trim(),
+      location: locSel.value === "Other" ? locOther.value.trim()
+        : locSel.value === startPlace && original ? original.location : locSel.value,
       notes: notes.value.trim(),
       start: start.value || null,
       end: lane ? end.value : null,
       dur: !lane && start.value && end.value ? minutes(end.value) - minutes(start.value) : (original && original.type === t ? original.dur : DEFAULT_DUR[t]),
       time: timeLabel(start.value, lane ? end.value : null, twoSeatings ? second.value : null,
         !start.value && original ? original.time : null),
-      ride: rideField.hidden ? null : rideSel.value || null,
+      ride: isFun() && pickSel.value
+        ? ((plan.wishlist.flatMap((p) => p.rides).find((r) => r.name === pickSel.value) || {}).ride || pickSel.value)
+        : isFun() ? (original && original.ride) || null : null,
     };
     if (!lane && t !== "lightning" && end.value) next.time = timeLabel(start.value, end.value, null);
     if (proposed.checked) next.status = "proposed"; else delete next.status;
@@ -1663,13 +1749,13 @@ function openEditor(eventId, dayId) {
 
   const panel = el("div", { class: "ed-panel", role: "dialog", "aria-modal": "true", "aria-label": original ? "Edit plan item" : "Add plan item" }, [
     el("h2", {}, original ? "Edit" : "Add to " + day.label),
-    field("Title", title),
     el("div", { class: "ed-row" }, [field("Day", daySel), field("Type", typeSel)]),
+    el("div", { class: "ed-row" }, [field("Location", locSel), kindField]),
+    otherField,
+    pickField,
+    field("Title", title),
     el("div", { class: "ed-row" }, [field("Starts", start), endField, secondField]),
     el("div", { class: "ed-field" }, [el("span", {}, "Groups"), el("div", { class: "ed-groups" }, groupBoxes)]),
-    field("Location", loc),
-    places,
-    rideField,
     field("Notes", notes),
     el("label", { class: "ed-check" }, [proposed, " Proposed, not booked yet"]),
     error,
@@ -1679,7 +1765,7 @@ function openEditor(eventId, dayId) {
   sheet.replaceChildren(el("div", { class: "ed-backdrop" }), panel);
   sheet.firstChild.addEventListener("click", close);
   sheet.hidden = false;
-  if (!original) title.focus();
+  if (!original) locSel.focus();
 }
 
 function clockTo24(mins) {
