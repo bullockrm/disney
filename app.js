@@ -1982,6 +1982,13 @@ document.getElementById("forget").addEventListener("click", forgetDevice);
 document.getElementById("refresh").addEventListener("click", () => location.reload());
 // No button for undoing all edits. Opening the site with ?undo-edits shows the
 // confirmation, for when undoing everything is really wanted.
+// Find My can't be shown inside the site, but on Apple devices this opens the
+// Find My app, where people sharing their location appear.
+if (isApple()) {
+  const findMy = document.getElementById("findmy");
+  findMy.hidden = false;
+  findMy.addEventListener("click", () => { window.location.href = "findmy://"; });
+}
 document.getElementById("sync-status").addEventListener("click", () => { if (syncState === "error") flushEdits(); });
 wireKeypad();
 renderDots();
