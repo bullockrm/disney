@@ -951,10 +951,12 @@ function weatherRows(day, pct, nowLine) {
   for (let h = 8; h < 22; h++) hours.push([h, hourWeather(day.date, h)]);
   if (!hours.some(([, w]) => w)) return null;
 
+  // Temperatures sit between the axis labels, at 9 AM, 11 AM, 1 PM and so on, and
+  // show the forecast for that exact hour.
   const temps = el("div", { class: "tl-axis tl-wx" });
   for (const [h, w] of hours) {
-    if (!w || h % 2) continue;
-    temps.append(el("span", { style: `left:${pct(h * 60 + 60)}%`, title: `${clock(h * 60)}: ${w[0]}°F, ${w[1]}% rain` },
+    if (!w || h % 2 === 0) continue;
+    temps.append(el("span", { style: `left:${pct(h * 60)}%`, title: `${clock(h * 60)}: ${w[0]}°F, ${w[1]}% rain` },
       [el("i", {}, weatherIcon(w[2], h)), `${w[0]}°`]));
   }
   const rain = el("div", { class: "tl-lane tl-rain" }, hours.filter(([, w]) => w).map(([h, w]) => el("div", {
