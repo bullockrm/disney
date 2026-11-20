@@ -900,6 +900,93 @@ function proposedBlocks(day, groupId) {
     });
 }
 
+// ---------- Weather ----------
+// Hourly forecast for Walt Disney World from Open-Meteo (free, no account), in °F and
+// Orlando time. Saved on the phone so the last forecast still shows offline.
+const WEATHER_KEY = "disney-weather";
+const WEATHER_URL = "https://api.open-meteo.com/v1/forecast?latitude=28.385&longitude=-81.564" +
+  "&hourly=temperature_2m,precipitation_probability,weather_code" +
+  "&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=16";
+let weather = readStore(WEATHER_KEY, null); // { fetched, hours: { "YYYY-MM-DDTHH:00": [temp, rain %, code] } }
+
+async function loadWeather() {
+  if (!navigator.onLine) return;
+  try {
+    const res = await fetch(WEATHER_URL, { cache: "no-store" });
+    if (!res.ok) return;
+    const h = (await res.json()).hourly;
+    const hours = {};
+    h.time.forEach((t, i) => {
+      hours[t] = [Math.round(h.temperature_2m[i]), h.precipitation_probability[i], h.weather_code[i]];
+    });
+    weather = { fetched: Date.now(), hours };
+    writeStore(WEATHER_KEY, weather);
+    renderTimeline();
+  } catch {
+    // Keep the saved forecast.
+  }
+}
+
+function hourWeather(date, hour) {
+  return weather && weather.hours[`${date}T${String(hour).padStart(2, "0")}:00`];
+}
+
+// Weather codes from the forecast (WMO), as a small picture.
+function weatherIcon(code, hour) {
+  const night = hour >= 18 || hour < 7;
+  if (code === 0) return night ? "🌙" : "☀️";
+  if (code === 1 || code === 2) return night ? "☁️" : "⛅";
+  if (code === 3) return "☁️";
+  if (code === 45 || code === 48) return "🌫️";
+  if (code >= 95) return "⛈️";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "❄️";
+  if (code >= 51) return "🌧️";
+  return "";
+}
+
+// Two rows on the timeline: temperature with a picture every two hours, and the
+// chance of rain for each hour. Plus a one-line summary for the day.
+function weatherRows(day, pct, nowLine) {
+  const hours = [];
+  for (let h = 8; h < 22; h++) hours.push([h, hourWeather(day.date, h)]);
+  if (!hours.some(([, w]) => w)) return null;
+
+  const temps = el("div", { class: "tl-axis tl-wx" });
+  for (const [h, w] of hours) {
+    if (!w || h % 2) continue;
+    temps.append(el("span", { style: `left:${pct(h * 60 + 60)}%`, title: `${clock(h * 60)}: ${w[0]}°F, ${w[1]}% rain` },
+      [el("i", {}, weatherIcon(w[2], h)), `${w[0]}°`]));
+  }
+  const rain = el("div", { class: "tl-lane tl-rain" }, hours.filter(([, w]) => w).map(([h, w]) => el("div", {
+    class: "tl-rain-bar" + (w[1] >= 50 ? " wet" : ""),
+    style: `left:${pct(h * 60)}%;width:${pct(h * 60 + 60) - pct(h * 60)}%;height:${Math.max(w[1], 2)}%`,
+    title: `${clock(h * 60)}: ${w[1]}% chance of rain`,
+  })));
+  rain.append(...[nowLine()].filter(Boolean));
+
+  const known = hours.filter(([, w]) => w);
+  const high = Math.max(...known.map(([, w]) => w[0]));
+  const low = Math.min(...known.map(([, w]) => w[0]));
+  const wet = known.filter(([, w]) => w[1] >= 40);
+  let rainText = "Low chance of rain";
+  if (wet.length) {
+    const peak = Math.max(...wet.map(([, w]) => w[1]));
+    rainText = `Rain most likely ${clock(wet[0][0] * 60)} – ${clock((wet[wet.length - 1][0] + 1) * 60)} (up to ${peak}%)`;
+  }
+  const updated = new Date(weather.fetched).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return {
+    rows: [
+      el("div", { class: "tl-row tl-row-wx" }, [el("div", { class: "tl-name" }, "°F"), temps]),
+      el("div", { class: "tl-row" }, [el("div", { class: "tl-name tl-rain-name" }, "Rain"), rain]),
+    ],
+    summary: el("p", { class: "wx-summary" }, [
+      `${high}° / ${low}° · ${rainText}. `,
+      el("a", { href: "https://open-meteo.com/", target: "_blank", rel: "noopener" }, "Forecast by Open-Meteo"),
+      `, updated ${updated}.`,
+    ]),
+  };
+}
+
 function renderTimeline() {
   const dayChips = document.getElementById("tl-day-chips");
   const root = document.getElementById("timeline");
@@ -926,6 +1013,8 @@ function renderTimeline() {
     axis.append(el("span", { style: `left:${pct(h * 60)}%` }, `${h % 12 || 12}${h < 12 ? "a" : "p"}`));
   }
   const rows = [el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }), axis])];
+  const wx = weatherRows(day, pct, nowLine);
+  if (wx) rows.push(...wx.rows);
 
   // Each group's park blocks, then the stretches when every group is in the same place.
   const perGroup = {};
@@ -969,6 +1058,7 @@ function renderTimeline() {
   rows.push(el("div", { class: "tl-row" }, [el("div", { class: "tl-name" }, el("span", { class: "g ALL" }, "All")), tLane]));
   if (showNow) root.append(el("p", { class: "now-label" }, `Now: ${clock(now.mins)}`));
   root.append(el("div", { class: "tl" }, rows));
+  if (wx) root.append(wx.summary);
 
   root.append(el("div", { class: "tl-legend" }, [
     ...PARKS.map(([name, code]) => el("span", {}, [el("span", { class: "dot p-" + code }), name])),
@@ -1945,6 +2035,8 @@ function showPlan(decrypted, key) {
   if (new URLSearchParams(location.search).has("undo-edits")) openResetConfirm();
   loadWaits();
   loadParkHours();
+  loadWeather();
+  setInterval(() => { if (!document.hidden) loadWeather(); }, 60 * 60000);
   startSync();
   // Keep the countdowns and live waits current while the page is open.
   // Skipped while a note or the search box is being typed in, so typing is not interrupted.

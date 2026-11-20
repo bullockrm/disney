@@ -575,3 +575,16 @@ html[data-compact] .swipe { margin-bottom: 0.35rem; }
   outline-offset: -3px;
 }
 .dot.legend-proposed { background: transparent; border: 1.5px dashed var(--muted); box-sizing: border-box; }
+
+/* Weather rows on the timeline. */
+.tl-row-wx { margin-bottom: 2px; }
+.tl-wx { height: 30px; }
+.tl-wx span { display: flex; flex-direction: column; align-items: center; transform: translateX(-50%); font-size: 0.68rem; font-weight: 600; color: var(--ink); line-height: 1.1; }
+.tl-wx span:first-child, .tl-wx span:last-child { transform: translateX(-50%); }
+.tl-wx i { font-style: normal; font-size: 0.8rem; }
+.tl-rain { height: 18px; background: transparent; border-style: dashed; }
+.tl-rain-bar { position: absolute; bottom: 0; background: #6fa8ff; opacity: 0.55; border-radius: 2px 2px 0 0; margin-left: 1px; box-sizing: border-box; border: 0 solid transparent; }
+.tl-rain-bar.wet { opacity: 0.9; background: #3d82f0; }
+.tl-rain-name { font-size: 0.65rem; }
+.wx-summary { font-size: 0.8rem; color: var(--muted); margin: 0.1rem 0 0.4rem; }
+.wx-summary a { color: var(--muted); }
