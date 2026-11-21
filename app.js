@@ -1477,8 +1477,8 @@ function renderOpen() {
 
   const sections = [
     ["warn", "Needs attention"],
-    ["info", "Not booked or changed"],
     ["tip", "Open time and ideas"],
+    ["info", "Not booked or changed"],
   ];
   if (!items.some((x) => x.level === "warn")) {
     root.append(el("div", { class: "advice-ok" }, "✓ No timing or park-hours problems in the plan."));
