@@ -846,6 +846,8 @@ function renderItinerary() {
     days.append(dayHeader(d.label, d.id));
     const hours = hoursBlock(d);
     if (hours) days.append(hours);
+    const wx = dayWeatherLine(d);
+    if (wx) days.append(wx);
     appendDayCards(days, d, matches);
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
@@ -922,9 +924,39 @@ async function loadWeather() {
     weather = { fetched: Date.now(), hours };
     writeStore(WEATHER_KEY, weather);
     renderTimeline();
+    renderItinerary();
   } catch {
     // Keep the saved forecast.
   }
+}
+
+// One-line forecast for a day on the Itinerary: picture, high and low, and rain.
+function dayForecast(day) {
+  const known = [];
+  for (let h = 8; h < 22; h++) {
+    const w = hourWeather(day.date, h);
+    if (w) known.push([h, w]);
+  }
+  if (!known.length) return null;
+  const high = Math.max(...known.map(([, w]) => w[0]));
+  const low = Math.min(...known.map(([, w]) => w[0]));
+  const wettest = known.reduce((a, b) => (b[1][1] > a[1][1] ? b : a));
+  const wet = known.filter(([, w]) => w[1] >= 40);
+  const [iconHour, iconW] = wettest[1][1] >= 40 ? wettest : known.find(([h]) => h === 13) || known[0];
+  const rain = wet.length
+    ? `Rain likely ${clock(wet[0][0] * 60)} – ${clock((wet[wet.length - 1][0] + 1) * 60)} (up to ${wettest[1][1]}%)`
+    : `Low chance of rain (${wettest[1][1]}%)`;
+  return { icon: weatherIcon(iconW[2], iconHour), high, low, rain, wet: wet.length > 0 };
+}
+
+function dayWeatherLine(day) {
+  const f = dayForecast(day);
+  if (!f) return null;
+  return el("div", { class: "day-wx" + (f.wet ? " wet" : "") }, [
+    el("span", { class: "day-wx-icon" }, f.icon),
+    el("strong", {}, `${f.high}° / ${f.low}°`),
+    ` · ${f.rain}`,
+  ]);
 }
 
 function hourWeather(date, hour) {

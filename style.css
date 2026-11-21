@@ -588,3 +588,10 @@ html[data-compact] .swipe { margin-bottom: 0.35rem; }
 .tl-rain-name { font-size: 0.65rem; }
 .wx-summary { font-size: 0.8rem; color: var(--muted); margin: 0.1rem 0 0.4rem; }
 .wx-summary a { color: var(--muted); }
+
+/* Daily forecast line under each Itinerary date. */
+.day-wx { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--muted); margin: 0 0 0.5rem; }
+.day-wx strong { color: var(--ink); font-weight: 700; }
+.day-wx.wet { color: #3d82f0; }
+html[data-mode="dark"] .day-wx.wet { color: #79a9ff; }
+.day-wx-icon { font-size: 1rem; line-height: 1; }
