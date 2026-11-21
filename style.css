@@ -238,8 +238,11 @@ button {
 .event.proposed { border-style: dashed; border-left-style: solid; }
 .event .time { font-weight: 600; font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
 .time-row, .title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+/* Badges sit beside the time when they fit; otherwise they drop to their own line. */
+.time-row { flex-wrap: wrap; row-gap: 4px; }
 .title-row { align-items: flex-start; }
-.status { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; flex: none; max-width: 60%; }
+.status { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; margin-left: auto; }
+.status > * { white-space: nowrap; }
 .status .badge { margin: 0; }
 .badge.done { background: var(--ok); color: #ffffff; }
 .fav-star {

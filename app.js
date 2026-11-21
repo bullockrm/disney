@@ -581,7 +581,8 @@ function iconEl(name) {
   return span;
 }
 
-function eventCard(ev, extra) {
+// Live waits and closures describe right now, so only today's cards show them.
+function eventCard(ev, extra, live = true) {
   const classes = ["event", ev.type, parkClass(ev.location)];
   if (ev.status === "proposed") classes.push("proposed");
   if (isDone(ev.id)) classes.push("done");
@@ -591,7 +592,7 @@ function eventCard(ev, extra) {
     ev.type === "lightning" ? el("span", { class: "ll-tag", title: "Lightning Lane", "aria-label": "Lightning Lane" }, "LL") : null,
     isDone(ev.id) ? el("span", { class: "badge done" }, "✓ Done") : null,
     adviceAlert(ev),
-    ev.type === "lightning" || ev.type === "attraction" ? waitChip(ev.ride) : null,
+    live && (ev.type === "lightning" || ev.type === "attraction") ? waitChip(ev.ride) : null,
   ].filter(Boolean);
   const travel = ev.type === "travel";
   const card = el("div", { class: classes.join(" ") }, [
@@ -627,7 +628,7 @@ function isActive(ev, mins) {
 function appendDayCards(container, day, events) {
   const now = nowET();
   if (day.date !== now.date) {
-    container.append(...events.map((ev) => eventCard(ev)));
+    container.append(...events.map((ev) => eventCard(ev, null, false)));
     return;
   }
   const label = clock(now.mins).replace(/ (AM|PM)$/, "");
