@@ -17,7 +17,7 @@
       if (localStorage.getItem("disney-compact") === "1") document.documentElement.dataset.compact = "1";
     } catch (e) { /* storage unavailable */ }
   </script>
-  <link rel="stylesheet" href="style.css?v=43">
+  <link rel="stylesheet" href="style.css?v=44">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -72,7 +72,6 @@
       <button class="tab" data-tab="now" role="tab" hidden>Now</button>
       <button class="tab active" data-tab="itinerary" role="tab">Itinerary</button>
       <button class="tab" data-tab="attractions" role="tab">Attractions</button>
-      <button class="tab" data-tab="travel" role="tab">Travel &amp; Rooms</button>
       <button class="tab" data-tab="open" role="tab">Advice <span class="tab-count" id="advice-count" hidden></span></button>
     </nav>
 
@@ -104,19 +103,13 @@
       <div id="attractions-list"></div>
     </section>
 
-    <section id="travel" class="panel">
-      <h2>Flights</h2>
-      <div id="flights"></div>
-      <h2>Rooms</h2>
-      <div id="rooms"></div>
-    </section>
-
     <section id="open" class="panel">
       <div class="chips" id="advice-group-chips" aria-label="Filter advice by group"></div>
       <div id="advice"></div>
     </section>
   </main>
 
+  <button type="button" id="to-top" class="to-top" aria-label="Back to top" hidden>↑</button>
   <div id="editor" class="editor" hidden></div>
   <footer class="app-footer">
     <span id="sync-status" class="sync-status"></span>
@@ -125,6 +118,6 @@
     <button type="button" id="forget" class="forget" hidden>Forget this device</button>
   </footer>
 
-  <script src="app.js?v=56"></script>
+  <script src="app.js?v=57"></script>
 </body>
 </html>

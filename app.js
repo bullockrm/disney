@@ -944,13 +944,23 @@ function parkBlocks(day, groupId) {
 
 // Proposed plans for one group, drawn dashed on top of the group's row for just their
 // own time. They don't move anyone's place or count toward being together.
+// Back-to-back proposed stops in the same place join into one block, since the group
+// stays in that park between them.
 function proposedBlocks(day, groupId) {
-  return day.events
+  const stops = day.events
     .filter((ev) => ev.start && ev.status === "proposed" && ev.groups.includes(groupId))
     .map((ev) => {
       const at = minutes(ev.start);
       return { code: placeCode(ev.location), proposed: true, start: at, end: ev.end ? minutes(ev.end) : at + Math.max(ev.dur || 0, 30) };
-    });
+    })
+    .sort((a, b) => a.start - b.start);
+  const blocks = [];
+  for (const s of stops) {
+    const last = blocks[blocks.length - 1];
+    if (last && last.code === s.code) last.end = Math.max(last.end, s.end);
+    else blocks.push({ ...s });
+  }
+  return blocks;
 }
 
 // ---------- Weather ----------
@@ -1158,13 +1168,6 @@ function renderTimeline() {
     el("span", {}, [el("span", { class: "dot p-TRV" }), "Travel"]),
     el("span", {}, [el("span", { class: "dot legend-proposed" }), "Proposed"]),
   ]));
-  root.append(together.length
-    ? el("p", { class: "meta" }, "All together: " + together.map((b) => `${b.code === "RES" ? "Resort" : b.code === "TRV" ? "Travel" : parkName(b.code)} ${clock(b.start)} – ${clock(b.end)}`).join(", "))
-    : el("p", { class: "meta" }, "No stretch on this day has every group in the same place."));
-
-
-  root.append(el("p", { class: "meta" },
-    `Blocks are estimates from the plan. They assume ${PARK_TRANSFER} minutes to change parks and ${SAME_PARK_WALK} minutes between stops in one park.`));
 }
 
 // ---------- Wish list ----------
@@ -1312,31 +1315,6 @@ function downloadCalendar() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-
-// ---------- Travel & rooms ----------
-
-function renderTravel() {
-  const flights = document.getElementById("flights");
-  const rooms = document.getElementById("rooms");
-  flights.replaceChildren(...plan.flights.map((f) => el("div", { class: "card p-none" }, [
-    el("div", { class: "label" }, `${f.direction}: ${f.flight}`),
-    el("div", {}, f.route),
-    el("div", { class: "meta" }, `Depart ${f.depart} · Arrive ${f.arrive}`),
-    el("div", { class: "meta" }, f.seats),
-  ])));
-
-  rooms.replaceChildren(
-    el("div", { class: "card p-none" }, [
-      el("div", { class: "label" }, "Room types"),
-      ...plan.rooms.types.map((t) => el("div", { class: "meta" }, `${t.group}: ${t.room}`)),
-    ]),
-    el("div", { class: "card p-none" }, [
-      el("div", { class: "label" }, "Requests"),
-      el("div", { class: "meta" }, plan.rooms.note),
-      el("ul", {}, plan.rooms.requests.map((r) => el("li", {}, r))),
-    ]),
-  );
 }
 
 // ---------- Advice ----------
@@ -1529,7 +1507,6 @@ function renderAll() {
   renderItinerary();
   renderTimeline();
   renderWish();
-  renderTravel();
   renderOpen();
 }
 
@@ -1906,6 +1883,19 @@ function openEditor(eventId, dayId, preset) {
     suggestTitle();
   });
   start.addEventListener("change", suggestTitle);
+  // The end time starts 30 minutes after the start, so its picker opens near the right time.
+  // It keeps following the start until the end is changed by hand.
+  let endAuto = !end.value;
+  const followStart = () => {
+    if (!start.value || second.value) return;
+    if (endAuto || !end.value || end.value <= start.value) {
+      end.value = clockTo24(Math.min(minutes(start.value) + 30, 23 * 60 + 59));
+      endAuto = true;
+    }
+  };
+  start.addEventListener("input", followStart);
+  start.addEventListener("change", followStart);
+  end.addEventListener("input", () => { endAuto = false; });
   syncFields();
 
   const close = () => { sheet.hidden = true; sheet.replaceChildren(); };
@@ -2205,6 +2195,14 @@ if (isApple()) {
   const findMy = document.getElementById("findmy");
   findMy.hidden = false;
   findMy.addEventListener("click", () => { window.location.href = "findmy://"; });
+}
+// Back-to-top button, shown once you've scrolled a good way down a long page.
+{
+  const top = document.getElementById("to-top");
+  const update = () => { top.hidden = window.scrollY < window.innerHeight * 1.2; };
+  window.addEventListener("scroll", update, { passive: true });
+  top.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  update();
 }
 document.getElementById("sync-status").addEventListener("click", () => { if (syncState === "error") flushEdits(); });
 wireKeypad();
