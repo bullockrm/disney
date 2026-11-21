@@ -1159,7 +1159,6 @@ const ATTR_KINDS = [["ALL", "All"], ["ride", "Rides"], ["show", "Shows"], ["char
 // because their addresses can't be checked from here, and a wrong one shows an error.
 const DISNEY = "https://disneyworld.disney.go.com";
 const DISNEY_PARK_SLUG = { MK: "magic-kingdom", EP: "epcot", HS: "hollywood-studios", AK: "animal-kingdom" };
-const DISNEY_APP_URL = "https://apps.apple.com/app/id547436543";
 function disneyListUrl(park, kind) {
   const slug = DISNEY_PARK_SLUG[parkCode(park)];
   if (!slug) return DISNEY + "/attractions/";
