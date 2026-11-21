@@ -597,10 +597,10 @@ html[data-mode="dark"] .day-wx.wet { color: #79a9ff; }
 .day-wx-icon { font-size: 1rem; line-height: 1; }
 
 /* Forecast on the date header line: one line, never wrapping. */
-.day-h:has(.day-wx-inline) { gap: 8px; white-space: nowrap; }
+.day-h:has(.day-wx-inline) { gap: 12px; white-space: nowrap; }
 .day-label { flex: none; }
 .day-wx-inline {
-  flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-align: right;
+  flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-align: center;
   font-size: 0.75rem; font-weight: 600; color: var(--muted); letter-spacing: 0;
 }
 .day-wx-inline .wx-icon { margin-right: 3px; }
