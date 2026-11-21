@@ -640,10 +640,46 @@ function appendDayCards(container, day, events) {
 // Sticky date header shared by the lists.
 function dayHeader(label, addDayId) {
   if (!addDayId) return el("h3", { class: "day-h" }, label);
-  const add = el("button", { type: "button", class: "day-add", "aria-label": "Add to " + label }, "+ Add");
+  const add = el("button", { type: "button", class: "day-add", "aria-label": "Add to " + label }, "+");
   add.addEventListener("click", () => openEditor(null, addDayId));
-  return el("h3", { class: "day-h" }, [el("span", {}, label), add]);
+  const day = plan.days.find((d) => d.id === addDayId);
+  return el("h3", { class: "day-h" }, [el("span", { class: "day-label" }, label), forecastInline(day), add]);
 }
+
+// Short hour, such as "2p" or "9a", for the forecast in a date header.
+function shortHour(h) {
+  return `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
+}
+
+// Forecast squeezed into the date header line: picture, high and low with their
+// hours, and rain. Pieces are dropped, least useful first, if the line won't fit.
+function forecastInline(day) {
+  const f = day && dayForecast(day);
+  if (!f) return null;
+  const piece = (cls, text, title) => el("span", { class: "wx-p " + cls, title }, text);
+  const rain = f.wet
+    ? [piece("wx-rain", `☂ ${f.wetPeak}%`, "Peak chance of rain"), piece("wx-drop-1", ` ${f.wetFrom}–${f.wetTo}`, "When rain is likely")]
+    : [piece("wx-rain", `☂ ${f.wetPeak}%`, "Chance of rain")];
+  return el("span", { class: "day-wx-inline" + (f.wet ? " wet" : ""), title: `${f.high}° high at ${clock(f.highAt * 60)}, ${f.low}° low at ${clock(f.lowAt * 60)}. ${f.rain}` }, [
+    el("span", { class: "wx-icon" }, f.icon),
+    piece("wx-hi", `${f.high}°`), piece("wx-drop-3", ` ${shortHour(f.highAt)}`),
+    piece("wx-lo", ` / ${f.low}°`), piece("wx-drop-2", ` ${shortHour(f.lowAt)}`),
+    el("span", { class: "wx-sep" }, " · "),
+    ...rain,
+  ]);
+}
+
+// Hides forecast pieces in date headers that would otherwise run past the + button.
+function fitForecasts() {
+  for (const box of document.querySelectorAll(".day-wx-inline")) {
+    box.querySelectorAll("[class*='wx-drop-']").forEach((p) => { p.hidden = false; });
+    for (const cls of ["wx-drop-1", "wx-drop-2", "wx-drop-3"]) {
+      if (box.scrollWidth <= box.clientWidth + 1) break;
+      box.querySelectorAll("." + cls).forEach((p) => { p.hidden = true; });
+    }
+  }
+}
+window.addEventListener("resize", () => requestAnimationFrame(fitForecasts));
 
 // Park hours for a day: Disney's published hours from the feed when we have them,
 // otherwise the hours entered in the plan. Covers parks in the plan's hours list
@@ -846,11 +882,10 @@ function renderItinerary() {
     days.append(dayHeader(d.label, d.id));
     const hours = hoursBlock(d);
     if (hours) days.append(hours);
-    const wx = dayWeatherLine(d);
-    if (wx) days.append(wx);
     appendDayCards(days, d, matches);
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
+  requestAnimationFrame(fitForecasts);
 }
 
 // ---------- Where is everyone ----------
@@ -940,13 +975,20 @@ function dayForecast(day) {
   if (!known.length) return null;
   const high = Math.max(...known.map(([, w]) => w[0]));
   const low = Math.min(...known.map(([, w]) => w[0]));
+  const highAt = known.find(([, w]) => w[0] === high)[0];
+  const lowAt = known.find(([, w]) => w[0] === low)[0];
   const wettest = known.reduce((a, b) => (b[1][1] > a[1][1] ? b : a));
   const wet = known.filter(([, w]) => w[1] >= 40);
   const [iconHour, iconW] = wettest[1][1] >= 40 ? wettest : known.find(([h]) => h === 13) || known[0];
   const rain = wet.length
     ? `Rain likely ${clock(wet[0][0] * 60)} – ${clock((wet[wet.length - 1][0] + 1) * 60)} (up to ${wettest[1][1]}%)`
     : `Low chance of rain (${wettest[1][1]}%)`;
-  return { icon: weatherIcon(iconW[2], iconHour), high, low, rain, wet: wet.length > 0 };
+  return {
+    icon: weatherIcon(iconW[2], iconHour), high, low, highAt, lowAt, rain, wet: wet.length > 0,
+    wetPeak: wettest[1][1],
+    wetFrom: wet.length ? shortHour(wet[0][0]) : null,
+    wetTo: wet.length ? shortHour(wet[wet.length - 1][0] + 1) : null,
+  };
 }
 
 function dayWeatherLine(day) {

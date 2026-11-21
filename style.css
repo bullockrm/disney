@@ -458,7 +458,7 @@ html[data-mode="dark"] .swatch[aria-pressed="true"] { outline-color: #ffffff; }
 /* Add button on itinerary day headers. */
 .day-h:has(.day-add) { display: flex; align-items: center; justify-content: space-between; }
 .day-add {
-  font: inherit; font-size: 0.75rem; font-weight: 600; padding: 2px 10px; border-radius: 999px;
+  flex: none; font: inherit; font-size: 0.95rem; font-weight: 700; line-height: 1; width: 26px; height: 26px; padding: 0; border-radius: 999px;
   border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer;
 }
 
@@ -595,3 +595,19 @@ html[data-compact] .swipe { margin-bottom: 0.35rem; }
 .day-wx.wet { color: #3d82f0; }
 html[data-mode="dark"] .day-wx.wet { color: #79a9ff; }
 .day-wx-icon { font-size: 1rem; line-height: 1; }
+
+/* Forecast on the date header line: one line, never wrapping. */
+.day-h:has(.day-wx-inline) { gap: 8px; white-space: nowrap; }
+.day-label { flex: none; }
+.day-wx-inline {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-align: right;
+  font-size: 0.75rem; font-weight: 600; color: var(--muted); letter-spacing: 0;
+}
+.day-wx-inline .wx-icon { margin-right: 3px; }
+.day-wx-inline .wx-hi { color: var(--ink); }
+.day-wx-inline .wx-p[hidden] { display: none; }
+.day-wx-inline.wet .wx-rain, .day-wx-inline.wet .wx-drop-1 { color: #3d82f0; }
+html[data-mode="dark"] .day-wx-inline.wet .wx-rain, html[data-mode="dark"] .day-wx-inline.wet .wx-drop-1 { color: #79a9ff; }
+/* Keep the header subtitle on one line on narrow phones. */
+header .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand, .brand > div { min-width: 0; }
