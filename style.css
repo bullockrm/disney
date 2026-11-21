@@ -614,3 +614,11 @@ html[data-mode="dark"] .day-wx-inline.wet .wx-rain, html[data-mode="dark"] .day-
 /* Keep the header subtitle on one line on narrow phones. */
 header .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand, .brand > div { min-width: 0; }
+
+/* Small outlined link button, used for Find My beside "Where's everyone". */
+.pill-link {
+  flex: none; font: inherit; font-size: 0.75rem; font-weight: 600; line-height: 1; white-space: nowrap;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--accent); background: transparent; color: var(--accent);
+}
+.pill-link[hidden] { display: none; }

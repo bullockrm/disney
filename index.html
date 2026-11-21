@@ -17,7 +17,7 @@
       if (localStorage.getItem("disney-compact") === "1") document.documentElement.dataset.compact = "1";
     } catch (e) { /* storage unavailable */ }
   </script>
-  <link rel="stylesheet" href="style.css?v=42">
+  <link rel="stylesheet" href="style.css?v=43">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -82,7 +82,7 @@
         <div class="chips" id="tl-day-chips" aria-label="Choose a day"></div>
       </div>
       <div id="now-top"></div>
-      <h2 class="sec sec-row">Where's everyone <button type="button" id="findmy" class="day-add" hidden>Find My ↗</button></h2>
+      <h2 class="sec sec-row">Where's everyone <button type="button" id="findmy" class="pill-link" hidden>Find My ↗</button></h2>
       <div id="timeline"></div>
       <div id="now-list"></div>
     </section>
