@@ -632,3 +632,10 @@ header .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
 .to-top[hidden] { display: none; }
+
+/* Live flight status on flight cards. */
+.time-was { margin-left: 6px; font-weight: 400; font-size: 0.8em; color: var(--muted); }
+.tag.flight { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.tag.flight.bad { border-color: var(--warn); color: var(--warn); }
+.flight-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
+.flight-row .pill-link { margin-left: auto; text-decoration: none; display: inline-flex; align-items: center; }

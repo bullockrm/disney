@@ -593,12 +593,13 @@ function eventCard(ev, extra, live = true) {
     isDone(ev.id) ? el("span", { class: "badge done" }, "✓ Done") : null,
     adviceAlert(ev),
     live && (ev.type === "lightning" || ev.type === "attraction") ? waitChip(ev.ride) : null,
+    flightChip(ev),
   ].filter(Boolean);
   const travel = ev.type === "travel";
   const card = el("div", { class: classes.join(" ") }, [
     extra ? el("div", { class: "countdown" }, extra) : null,
     el("div", { class: "time-row" }, [
-      el("span", { class: "time" }, [iconEl(iconFor(ev)), ev.time]),
+      el("span", { class: "time" }, [iconEl(iconFor(ev)), ev.time, ev.timeWas ? el("s", { class: "time-was" }, ev.timeWas) : null]),
       right.length ? el("span", { class: "status" }, right) : null,
     ]),
     el("div", { class: "title" }, displayTitle(ev)),
@@ -606,6 +607,7 @@ function eventCard(ev, extra, live = true) {
     el("div", { class: "grp" }, groupChips(ev.groups)),
     ev.meet ? el("div", { class: "notes" }, ev.meet) : null,
     ev.notes ? el("div", { class: "notes" }, ev.notes) : null,
+    flightRow(ev),
     noteBox(ev.id),
   ]);
   return swipeCard(card, {
@@ -961,6 +963,137 @@ function proposedBlocks(day, groupId) {
     else blocks.push({ ...s });
   }
   return blocks;
+}
+
+// ---------- Live flights ----------
+// Flight status from AeroDataBox (through RapidAPI). The key lives in the encrypted plan.
+// Each phone checks on flight days only, at most every 10 minutes, and keeps the last
+// answer so the cards still show it offline.
+const FLIGHT_KEY = "disney-flights";
+const FLIGHT_REFRESH = 10 * 60000;
+const AIRPORT_TZ = { DAL: ["America/Chicago", "CT"], MCO: ["America/New_York", "ET"] };
+let flightCache = readStore(FLIGHT_KEY, {}); // { "WN12/2026-11-21": { fetched, data } }
+
+const flightId = (f) => `${f.number}/${f.date}`;
+const flightTrackUrl = (f) => "https://www.flightaware.com/live/flight/" + encodeURIComponent(f.track || f.number);
+
+// Worth checking from the day before until the evening after the flight.
+function flightWindow(f) {
+  const day = Date.parse(f.date + "T12:00:00Z");
+  return Date.now() > day - 36 * 3600000 && Date.now() < day + 24 * 3600000;
+}
+
+async function loadFlights(force) {
+  const key = basePlan && basePlan.flight_api && basePlan.flight_api.key;
+  if (!key || !navigator.onLine) return;
+  let changed = false;
+  for (const f of plan.flights || []) {
+    if (!f.number || !flightWindow(f)) continue;
+    const cached = flightCache[flightId(f)];
+    if (!force && cached && Date.now() - cached.fetched < FLIGHT_REFRESH) continue;
+    try {
+      const res = await fetch(`https://aerodatabox.p.rapidapi.com/flights/number/${f.number}/${f.date}?withAircraftImage=false&withLocation=false&dateLocalRole=Departure`, {
+        headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com" }, cache: "no-store",
+      });
+      if (res.status === 204) { flightCache[flightId(f)] = { fetched: Date.now(), data: null }; changed = true; continue; }
+      if (!res.ok) continue;
+      const list = await res.json();
+      const data = (Array.isArray(list) ? list : [list]).find((x) => x.departure && x.departure.airport && x.departure.airport.iata === f.from) || list[0] || null;
+      flightCache[flightId(f)] = { fetched: Date.now(), data };
+      changed = true;
+    } catch {
+      // Keep the last answer.
+    }
+  }
+  if (changed) {
+    writeStore(FLIGHT_KEY, flightCache);
+    rebuildPlan();
+    renderAll();
+  }
+}
+
+// "2026-11-21 17:05Z" or "2026-11-21T17:05Z" -> Date
+const utcDate = (t) => (t && t.utc ? new Date(t.utc.replace(" ", "T").replace(/Z?$/, "Z")) : null);
+
+function zoneClock(date, airport) {
+  const [tz, label] = AIRPORT_TZ[airport] || ["America/New_York", "ET"];
+  const text = date.toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
+  return `${text} ${label}`;
+}
+// Orlando minutes after midnight, which is what the timeline and advice use.
+function etMinutes(date) {
+  const [h, m] = date.toLocaleTimeString("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).split(":").map(Number);
+  return h * 60 + m;
+}
+const hhmm = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+
+// Best current gate time for one end of a flight: revised (or actual), then runway, then predicted, then scheduled.
+function movement(m, arriving) {
+  if (!m) return null;
+  const sched = utcDate(m.scheduledTime);
+  const best = utcDate(m.revisedTime) || utcDate(m.runwayTime) || (arriving ? utcDate(m.predictedTime) : null) || sched;
+  return { sched, best, terminal: m.terminal, gate: m.gate, belt: m.baggageBelt };
+}
+
+const FLIGHT_STATUS = {
+  Expected: "On time", Unknown: "", CheckIn: "Check-in", Boarding: "Boarding", GateClosed: "Gate closed",
+  Departed: "Departed", EnRoute: "In the air", Approaching: "Landing soon", Arrived: "Landed", Landed: "Landed",
+  Delayed: "Delayed", Canceled: "Canceled", CanceledUncertain: "May be canceled", Diverted: "Diverted",
+};
+
+// Puts live times and status onto the flight's cards. Runs inside rebuildPlan, so it
+// never changes the saved plan, only what's shown.
+function applyFlights(p) {
+  for (const f of p.flights || []) {
+    const cached = flightCache[flightId(f)];
+    const d = cached && cached.data;
+    const events = p.days.flatMap((day) => day.events);
+    const dep = events.find((ev) => ev.id === f.depart_event);
+    const arr = f.arrive_event && events.find((ev) => ev.id === f.arrive_event);
+    if (dep) dep.flight = { track: flightTrackUrl(f), number: f.track || f.number };
+    if (!d) continue;
+    const out = movement(d.departure, false);
+    const inb = movement(d.arrival, true);
+    const late = out && out.sched && out.best ? Math.round((out.best - out.sched) / 60000) : 0;
+    let status = FLIGHT_STATUS[d.status] ?? d.status;
+    if (late >= 10 && /On time|Check-in|Boarding|^$/.test(status)) status = `Delayed ${late}m`;
+    else if (status === "Delayed" && late > 0) status = `Delayed ${late}m`;
+    const fetched = cached.fetched;
+    if (dep && out && out.best) {
+      dep.start = hhmm(etMinutes(out.best));
+      dep.time = zoneClock(out.best, f.from);
+      if (out.sched && Math.abs(out.best - out.sched) >= 60000) dep.timeWas = zoneClock(out.sched, f.from);
+      if (inb && inb.best) {
+        dep.end = hhmm(etMinutes(inb.best));
+        dep.notes = `Arrives ${f.to} ${zoneClock(inb.best, f.to)}.`;
+      }
+      dep.flight = { ...dep.flight, status, bad: /Delayed|Cancel|Divert/.test(status), fetched,
+        info: [out.terminal && `Terminal ${out.terminal}`, out.gate && `Gate ${out.gate}`].filter(Boolean).join(" · ") };
+    }
+    if (arr && inb && inb.best) {
+      arr.start = hhmm(etMinutes(inb.best));
+      arr.time = zoneClock(inb.best, f.to);
+      if (inb.sched && Math.abs(inb.best - inb.sched) >= 60000) arr.timeWas = zoneClock(inb.sched, f.to);
+      arr.flight = { track: flightTrackUrl(f), number: f.track || f.number, status, bad: /Delayed|Cancel|Divert/.test(status), fetched,
+        info: [inb.terminal && `Terminal ${inb.terminal}`, inb.gate && `Gate ${inb.gate}`, inb.belt && `Bags: belt ${inb.belt}`].filter(Boolean).join(" · ") };
+    }
+  }
+  return p;
+}
+
+function flightChip(ev) {
+  if (!ev.flight || !ev.flight.status) return null;
+  return el("span", { class: "tag flight" + (ev.flight.bad ? " bad" : ""), title: "Live flight status" }, ev.flight.status);
+}
+
+function flightRow(ev) {
+  if (!ev.flight) return null;
+  const ago = ev.flight.fetched ? Math.max(0, Math.round((Date.now() - ev.flight.fetched) / 60000)) : null;
+  return el("div", { class: "flight-row" }, [
+    ev.flight.info ? el("span", { class: "meta" }, ev.flight.info) : null,
+    ago != null ? el("span", { class: "meta" }, ago < 1 ? "Updated just now" : `Updated ${ago} min ago`) : null,
+    el("a", { class: "pill-link", href: ev.flight.track, target: "_blank", rel: "noopener" }, `Track ${ev.flight.number} ↗`),
+  ]);
 }
 
 // ---------- Weather ----------
@@ -1595,7 +1728,7 @@ function applyEdits(base, edits) {
 }
 
 function rebuildPlan() {
-  plan = applyEdits(basePlan, { ...remoteEdits, ...pendingEdits });
+  plan = applyFlights(applyEdits(basePlan, { ...remoteEdits, ...pendingEdits }));
 }
 
 function editorOpen() {
@@ -2132,6 +2265,8 @@ function showPlan(decrypted, key) {
     renderTimeline();
   }, 30000);
   setInterval(() => { if (!document.hidden) loadWaits(); }, 5 * 60000);
+  loadFlights();
+  setInterval(() => { if (!document.hidden) loadFlights(); }, FLIGHT_REFRESH);
 }
 
 async function loadEnc() {
