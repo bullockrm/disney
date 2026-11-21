@@ -322,9 +322,24 @@ function noteBox(id) {
   return box;
 }
 
-function swipeHint() {
+function swipeHint(holdText = "hold to edit") {
   if (readStore(HINT_KEY, false)) return null;
-  return el("p", { class: "hint" }, "Tap a card for directions · swipe left for Done · swipe right for a note · hold to edit");
+  return el("p", { class: "hint" }, `Tap a card for directions · swipe left for Done · swipe right for a note · ${holdText}`);
+}
+
+// Holding an attraction opens a new itinerary item for it: today during the trip,
+// otherwise the first day with plans at that park.
+function addAttraction(r, park) {
+  const code = parkCode(park);
+  const today = plan.days.find((d) => d.date === nowET().date);
+  const parkDay = plan.days.find((d) => d.events.some((ev) => parkCode(ev.location) === code));
+  const day = today || parkDay || plan.days[0];
+  openEditor(null, day.id, {
+    title: r.name,
+    type: r.kind === "show" ? "show" : "attraction",
+    location: park,
+    ride: r.ride || r.name,
+  });
 }
 
 // Wraps a card so it can be swiped: left marks it done, right opens its note,
@@ -1168,7 +1183,7 @@ function disneyListUrl(park, kind) {
 function renderWish() {
   const root = document.getElementById("attractions-list");
   root.replaceChildren();
-  const hint = swipeHint();
+  const hint = swipeHint("hold to add to the itinerary");
   if (hint) root.append(hint);
   const note = waitsNote();
   if (note) root.append(note);
@@ -1229,7 +1244,7 @@ function renderWish() {
       ])),
       noteBox(id),
     ]);
-    return swipeCard(body, { id, name: r.name, location: park });
+    return swipeCard(body, { id, name: r.name, location: park, onEdit: () => addAttraction(r, park) });
   };
 
   // Favorites are pulled out of their park and listed first.
@@ -1759,13 +1774,15 @@ function field(label, input, cls) {
 }
 
 // Opens the edit sheet for an existing item, or a blank one for a new item on a day.
-function openEditor(eventId, dayId) {
+// preset fills in a new item, such as an attraction held down on the Attractions tab.
+function openEditor(eventId, dayId, preset) {
   const sheet = document.getElementById("editor");
   const day = plan.days.find((d) => d.events.some((ev) => ev.id === eventId)) || plan.days.find((d) => d.id === dayId);
   const original = day.events.find((ev) => ev.id === eventId);
   const ev = original || {
     title: "", type: "attraction", location: "", notes: "",
     groups: state.group === "ALL" ? plan.groups.map((g) => g.id) : [state.group],
+    ...(preset || {}),
   };
   const id = eventId || "x-" + crypto.getRandomValues(new Uint32Array(2)).join("");
   const split = (ev.time || "").includes(" / ");
