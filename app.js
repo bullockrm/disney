@@ -564,6 +564,7 @@ function iconFor(ev) {
     return r && r.kind && r.kind !== "ride" ? r.kind : "ride";
   }
   if (ev.type === "dining") return "dining";
+  if (ev.type === "show" && /caribbean/i.test(ev.location || "")) return "resort";
   if (ev.type === "show") return /parade/.test(t) ? "parade" : "fireworks";
   if (ev.type === "travel") {
     if (/mears|bus|shuttle/.test(t)) return "bus";
@@ -963,6 +964,65 @@ function proposedBlocks(day, groupId) {
     else blocks.push({ ...s });
   }
   return blocks;
+}
+
+// ---------- Resort activities ----------
+// The resort's weekly recreation schedule, laid out for each night of the trip.
+// Tap a card for walking directions, hold it to add it to the itinerary.
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function resortActivities(date) {
+  const rec = plan.resort_rec;
+  if (!rec) return [];
+  const wd = WEEKDAYS[new Date(date + "T12:00:00Z").getUTCDay()];
+  const fill = rec.week[wd] || {};
+  return rec.daily.map((a) => ({
+    ...a,
+    id: `rec-${date}-${a.key}`,
+    title: a.title.replace("{craft}", fill.craft || "Craft").replace("{movie}", fill.movie || "TBA"),
+  }));
+}
+
+function addResortActivity(day, a) {
+  openEditor(null, day.id, {
+    title: a.title, type: "show", location: "Caribbean Beach Resort",
+    start: a.allday ? "" : a.start, end: a.allday ? "" : a.end || "",
+    time: a.allday ? "" : clock(minutes(a.start)), notes: a.spot + (a.fee ? " ($)" : ""),
+  });
+}
+
+function renderResort() {
+  const root = document.getElementById("resort-list");
+  if (!root) return;
+  root.replaceChildren();
+  const rec = plan.resort_rec;
+  if (!rec) { root.append(el("p", { class: "meta" }, "No resort schedule yet.")); return; }
+  const now = nowET();
+  const days = plan.days.filter((d) => d.date >= now.date);
+  root.append(el("p", { class: "meta resort-note" }, rec.note + " Tap for directions, hold to add to the itinerary."));
+  for (const day of days.length ? days : plan.days) {
+    const isToday = day.date === now.date;
+    // Headers and cards share one list so each date header stays pinned until the next one.
+    root.append(el("h2", { class: "day-h" }, isToday ? `Today · ${day.label}` : day.label));
+    const list = root;
+    for (const a of resortActivities(day.date)) {
+      const over = isToday && minutes(a.end || a.start) + (a.end ? 0 : 120) < now.mins;
+      const time = a.allday ? "Anytime" : a.end ? `${clock(minutes(a.start))} – ${clock(minutes(a.end))}` : clock(minutes(a.start));
+      const card = el("div", { class: "event resort-rec" + (over ? " past" : "") }, [
+        el("div", { class: "time-row" }, [
+          el("span", { class: "time" }, [iconEl("resort"), time]),
+          a.fee ? el("span", { class: "status" }, el("span", { class: "tag" }, "$ Fee")) : null,
+        ]),
+        el("div", { class: "title" }, a.title),
+        el("div", { class: "meta" }, a.spot),
+        noteBox(a.id),
+      ]);
+      list.append(swipeCard(card, {
+        id: a.id, name: (a.place || a.spot).split(",")[0], location: "Caribbean Beach Resort",
+        onEdit: () => addResortActivity(day, a),
+      }));
+    }
+  }
 }
 
 // ---------- Live flights ----------
@@ -1640,6 +1700,7 @@ function renderAll() {
   renderItinerary();
   renderTimeline();
   renderWish();
+  renderResort();
   renderOpen();
 }
 

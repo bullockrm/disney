@@ -17,7 +17,7 @@
       if (localStorage.getItem("disney-compact") === "1") document.documentElement.dataset.compact = "1";
     } catch (e) { /* storage unavailable */ }
   </script>
-  <link rel="stylesheet" href="style.css?v=45">
+  <link rel="stylesheet" href="style.css?v=46">
 </head>
 <body>
   <main id="lock" class="lock">
@@ -72,6 +72,7 @@
       <button class="tab" data-tab="now" role="tab" hidden>Now</button>
       <button class="tab active" data-tab="itinerary" role="tab">Itinerary</button>
       <button class="tab" data-tab="attractions" role="tab">Attractions</button>
+      <button class="tab" data-tab="resort" role="tab">Resort</button>
       <button class="tab" data-tab="open" role="tab">Advice <span class="tab-count" id="advice-count" hidden></span></button>
     </nav>
 
@@ -103,6 +104,10 @@
       <div id="attractions-list"></div>
     </section>
 
+    <section id="resort" class="panel">
+      <div id="resort-list"></div>
+    </section>
+
     <section id="open" class="panel">
       <div class="chips" id="advice-group-chips" aria-label="Filter advice by group"></div>
       <div id="advice"></div>
@@ -118,6 +123,6 @@
     <button type="button" id="forget" class="forget" hidden>Forget this device</button>
   </footer>
 
-  <script src="app.js?v=58"></script>
+  <script src="app.js?v=59"></script>
 </body>
 </html>

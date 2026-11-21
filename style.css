@@ -639,3 +639,9 @@ header .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag.flight.bad { border-color: var(--warn); color: var(--warn); }
 .flight-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
 .flight-row .pill-link { margin-left: auto; text-decoration: none; display: inline-flex; align-items: center; }
+
+/* Resort activities tab. */
+.resort-note { margin: 4px 0 8px; }
+#resort-list { display: flex; flex-direction: column; gap: 8px; }
+#resort-list .day-h { margin-top: 8px; }
+.event.resort-rec.past { opacity: 0.5; }
