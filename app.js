@@ -579,6 +579,7 @@ const ICONS = {
   character: '<circle cx="12" cy="8" r="3.5"/><path d="M5 21c.6-4 3.3-6.5 7-6.5s6.4 2.5 7 6.5M18.5 3l.7 1.5 1.6.2-1.2 1.1.3 1.6-1.4-.8-1.4.8.3-1.6-1.2-1.1 1.6-.2z"/>',
   play: '<path d="M5 21V8h4v13M3 8h8M9 10.5c4 0 5 3 7 6.5l3.5 4"/><path d="M5 12.5h4M5 16.5h4"/>',
   move: '<circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="5.5" r="2.5"/><path d="M8 18.5h6.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H16"/>',
+  walk: '<circle cx="13" cy="4" r="2"/><path d="M10.5 21l2-6.5 2.5 2.5V21M8 12.5l2.5-5.5 3.5 1 2.5 3.5h3M10.5 7l-3 1.5-1.5 4"/>',
   resort: '<path d="M4.5 21V10.5h15V21M2.5 21h19M10 21v-4h4v4M12 10.5V3l5 1.8L12 6.6M8 13.5h1.5M14.5 13.5H16"/>',
 };
 
@@ -1452,7 +1453,7 @@ function renderTimeline() {
 
 // ---------- Wish list ----------
 
-const ATTR_KINDS = [["ALL", "All"], ["ride", "Rides"], ["show", "Shows"], ["character", "Characters"], ["play", "Play areas"]];
+const ATTR_KINDS = [["ALL", "All"], ["ride", "Rides"], ["show", "Shows"], ["character", "Characters"], ["play", "Play areas"], ["walk", "Walk-throughs"]];
 
 // Disney's official list pages for each park. Individual ride pages aren't linked
 // because their addresses can't be checked from here, and a wrong one shows an error.
@@ -1461,7 +1462,7 @@ const DISNEY_PARK_SLUG = { MK: "magic-kingdom", EP: "epcot", HS: "hollywood-stud
 function disneyListUrl(park, kind) {
   const slug = DISNEY_PARK_SLUG[parkCode(park)];
   if (!slug) return DISNEY + "/attractions/";
-  return `${DISNEY}/${kind === "ride" ? "attractions" : "entertainment"}/${slug}/`;
+  return `${DISNEY}/${kind === "ride" || kind === "walk" ? "attractions" : "entertainment"}/${slug}/`;
 }
 
 function setAttrPark(code) {
@@ -1516,7 +1517,7 @@ function renderWish() {
     star.addEventListener("click", () => { toggleFav(id); renderWish(); });
     const detail = [showPark ? park : null, r.kid, r.about, r.pass].filter(Boolean).join(" · ");
     const kind = r.kind || "ride";
-    const showInfo = kind === "ride" ? null : showtimeInfo(ride);
+    const showInfo = kind === "ride" || kind === "walk" ? null : showtimeInfo(ride);
     const icon = kind === "show" && /parade|cavalcade/i.test(r.name) ? "parade"
       : kind === "show" && r.timed && !/parade/i.test(r.name) && /fireworks|nighttime|luminous|happily|fantasmic/i.test(r.name + " " + r.about) ? "fireworks"
       : kind;
@@ -1532,7 +1533,7 @@ function renderWish() {
       el("div", { class: "meta" }, detail),
       showInfo && showInfo.line ? el("div", { class: "showtimes" }, showInfo.line) : null,
       el("a", { class: "disney-link", href: disneyListUrl(park, kind), target: "_blank", rel: "noopener" },
-        `${parkName(parkCode(park))} ${kind === "ride" ? "rides" : "entertainment"} on Disney ↗`),
+        `${parkName(parkCode(park))} ${kind === "ride" || kind === "walk" ? "attractions" : "entertainment"} on Disney ↗`),
       ...bookings.map((x) => el("div", { class: "booked" }, [
         el("span", { class: "booked-label" }, x.ev.status === "proposed" ? "Proposed for" : "In the plan for"),
         ...groupChips(x.ev.groups),
@@ -1558,7 +1559,7 @@ function renderWish() {
   }
   if (!count) root.append(el("p", { class: "meta" }, "Nothing matches these filters."));
   root.append(el("p", { class: "meta" },
-    "Rides, shows, character meets and play areas in the four parks. ★ Little ones shows things with no height minimum. Showtimes and character spots change, so check the Disney app on the day."));
+    "Rides, shows, character meets, play areas and walk-throughs in the four parks. ★ Little ones shows things with no height minimum. Showtimes and character spots change, so check the Disney app on the day."));
 }
 
 // ---------- Calendar export ----------
@@ -1631,7 +1632,7 @@ function rideIdeas(day, groupId, code) {
   const have = day.events.filter((ev) => ev.ride && ev.groups.includes(groupId)).map((ev) => normName(ev.ride));
   // Groups with little ones get little-friendly ideas first: no height minimum, gentle shows and meets.
   const little = (plan.groups.find((g) => g.id === groupId) || {}).little;
-  const label = { show: "show", character: "meet", play: "play area" };
+  const label = { show: "show", character: "meet", play: "play area", walk: "walk-through" };
   return park.rides
     .filter((r) => !r.timed && !have.some((h) => normName(r.name).includes(h)))
     .map((r) => ({ r, fav: isFav("wish-" + normName(r.name)), kid: little && r.little ? 1 : 0, wait: (waitFor(r.ride || r.name) || {}).wait }))
