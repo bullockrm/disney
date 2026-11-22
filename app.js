@@ -45,6 +45,7 @@ const state = {
   query: "",
   timelineDay: null,
   attrKind: "ALL",
+  attrPark: readStore("disney-attr-park", "ALL"),
   attrQuery: "",
   little: false,
 };
@@ -1462,6 +1463,12 @@ function disneyListUrl(park, kind) {
   return `${DISNEY}/${kind === "ride" ? "attractions" : "entertainment"}/${slug}/`;
 }
 
+function setAttrPark(code) {
+  state.attrPark = code;
+  writeStore("disney-attr-park", code);
+  renderWish();
+}
+
 function renderWish() {
   const root = document.getElementById("attractions-list");
   root.replaceChildren();
@@ -1472,6 +1479,11 @@ function renderWish() {
   const planned = plan.days.flatMap((d) => d.events.filter((ev) => ev.type !== "travel").map((ev) => ({ ev, day: d })));
 
   // Filters: kind of attraction, and "little ones" for no height minimum and gentle.
+  // Park filter, remembered on this phone.
+  const parkChips = document.getElementById("attr-park-chips");
+  parkChips.replaceChildren(chip("All parks", state.attrPark === "ALL", () => setAttrPark("ALL")),
+    ...plan.wishlist.map((p) => parkCode(p.park)).filter(Boolean)
+      .map((code) => chip(parkName(code), state.attrPark === code, () => setAttrPark(code))));
   const chips = document.getElementById("attr-chips");
   chips.replaceChildren();
   for (const [k, label] of ATTR_KINDS) {
@@ -1486,7 +1498,8 @@ function renderWish() {
     const hay = [r.name, parkOf.get(r), r.kid, r.about, r.pass, r.kind].join(" ").toLowerCase();
     return words.every((w) => hay.includes(w));
   };
-  const shown = (r) => (state.attrKind === "ALL" || (r.kind || "ride") === state.attrKind) && (!state.little || r.little) && matches(r);
+  const inPark = (r) => state.attrPark === "ALL" || parkCode(parkOf.get(r) || "") === state.attrPark;
+  const shown = (r) => inPark(r) && (state.attrKind === "ALL" || (r.kind || "ride") === state.attrKind) && (!state.little || r.little) && matches(r);
 
   const card = (r, park, showPark) => {
     const id = "wish-" + normName(r.name);
