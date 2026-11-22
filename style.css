@@ -140,7 +140,16 @@ button {
   cursor: pointer;
 }
 
-/* One-line tab bar, sticky at the top, with a fade on the right edge. */
+/* Sideways scrollers fade only on a side that has more to scroll to. The script sets
+   fade-l and fade-r as you scroll, so there's no fade at either end. */
+.tabs, .chips {
+  --fl: 0px; --fr: 0px;
+  --edge-fade: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent);
+}
+.tabs.fade-l, .chips.fade-l { --fl: 36px; }
+.tabs.fade-r, .chips.fade-r { --fr: 36px; }
+
+/* One-line tab bar, sticky at the top. */
 .tabs {
   display: flex;
   flex-wrap: nowrap;
@@ -153,8 +162,8 @@ button {
   position: sticky;
   top: 0;
   z-index: 3;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  -webkit-mask-image: var(--edge-fade);
+  mask-image: var(--edge-fade);
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
@@ -181,8 +190,8 @@ button {
   overflow-x: auto;
   scrollbar-width: none;
   padding-bottom: 2px;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  -webkit-mask-image: var(--edge-fade);
+  mask-image: var(--edge-fade);
 }
 .chips::-webkit-scrollbar { display: none; }
 .chip {

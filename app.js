@@ -871,6 +871,7 @@ function inTrip() {
 function selectTab(name) {
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
+  requestAnimationFrame(updateFades);
 }
 function syncNowTab(initial) {
   const tab = document.querySelector('.tab[data-tab="now"]');
@@ -2499,6 +2500,24 @@ if (isApple()) {
   top.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
   update();
 }
+// Edge fades on sideways scrollers: fade a side only while there's more to see that way.
+function updateFade(row) {
+  const max = row.scrollWidth - row.clientWidth;
+  row.classList.toggle("fade-l", row.scrollLeft > 2);
+  row.classList.toggle("fade-r", max - row.scrollLeft > 2);
+}
+function updateFades() { document.querySelectorAll(".tabs, .chips").forEach(updateFade); }
+document.addEventListener("scroll", (e) => {
+  if (e.target instanceof Element && e.target.matches(".tabs, .chips")) updateFade(e.target);
+}, { capture: true, passive: true });
+{
+  let queued = false;
+  const later = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; updateFades(); }); } };
+  new MutationObserver(later).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener("resize", later);
+  later();
+}
+
 // No zooming: iOS Safari ignores the viewport setting, so block its pinch gestures too.
 for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
   document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
