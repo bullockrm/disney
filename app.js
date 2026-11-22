@@ -1453,6 +1453,10 @@ function renderTimeline() {
 
 // ---------- Wish list ----------
 
+// Alphabetical by name, skipping a leading "A", "An" or "The".
+const sortName = (n) => n.replace(/^(the|an|a)\s+/i, "").toLowerCase();
+const byName = (a, b) => sortName(a).localeCompare(sortName(b));
+
 const ATTR_KINDS = [["ALL", "All"], ["ride", "Rides"], ["show", "Shows"], ["character", "Characters"], ["play", "Play areas"], ["walk", "Walk-throughs"]];
 
 // Disney's official list pages for each park. Individual ride pages aren't linked
@@ -1546,13 +1550,11 @@ function renderWish() {
 
   // Favorites are pulled out of their park and listed first.
   const all = plan.wishlist.flatMap((p) => p.rides.map((r) => ({ r, park: p.park })));
-  const favs = all.filter((x) => isFav("wish-" + normName(x.r.name)) && shown(x.r));
+  const favs = all.filter((x) => isFav("wish-" + normName(x.r.name)) && shown(x.r)).sort((a, b) => byName(a.r.name, b.r.name));
   if (favs.length) root.append(dayHeader("Favorites"), ...favs.map((x) => card(x.r, x.park, true)));
-  const kindOrder = (r) => ATTR_KINDS.findIndex(([k]) => k === (r.kind || "ride"));
   let count = favs.length;
   for (const p of plan.wishlist) {
-    const rest = p.rides.filter((r) => !isFav("wish-" + normName(r.name)) && shown(r))
-      .map((r, i) => [r, i]).sort((a, b) => kindOrder(a[0]) - kindOrder(b[0]) || a[1] - b[1]).map((x) => x[0]);
+    const rest = p.rides.filter((r) => !isFav("wish-" + normName(r.name)) && shown(r)).sort((a, b) => byName(a.name, b.name));
     if (!rest.length) continue;
     count += rest.length;
     root.append(dayHeader(p.park), ...rest.map((r) => card(r, p.park, false)));
@@ -2114,8 +2116,6 @@ function openEditor(eventId, dayId, preset) {
   const isFun = () => ["lightning", "attraction", "show"].includes(typeSel.value);
 
   // The list follows the type, kind and location, sorted A to Z.
-  const sortName = (n) => n.replace(/^the\s+/i, "").toLowerCase();
-  const byName = (a, b) => sortName(a).localeCompare(sortName(b));
   const fillPick = () => {
     const keep = pickSel.value || pickStart;
     pickStart = "";
