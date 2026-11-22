@@ -290,18 +290,63 @@ function saveNote(id, text) {
 function isApple() {
   return /iPad|iPhone|iPod|Macintosh|Mac OS X/.test(navigator.userAgent);
 }
-function openDirections(name, location) {
-  const query = mapsQuery(name, location);
-  if (isApple()) {
-    window.location.href = "maps://?daddr=" + encodeURIComponent(query) + "&dirflg=w";
-    return;
+// Directions go to exact coordinates when we know them, since Maps often can't make
+// sense of a long "ride, park, Walt Disney World" search. Coordinates for rides, shows
+// and restaurants come from ThemeParks.wiki (fetched once a week and kept on the phone).
+// Anything else goes to the park or resort by its plain name, which Maps knows.
+const PLACES_KEY = "disney-places";
+const PARK_PLACES = {
+  MK: [28.4177, -81.5812, "Magic Kingdom Park"],
+  EP: [28.3747, -81.5494, "EPCOT"],
+  HS: [28.3575, -81.5583, "Disney's Hollywood Studios"],
+  AK: [28.3553, -81.5901, "Disney's Animal Kingdom Theme Park"],
+};
+const RESORT_PLACE = "Disney's Caribbean Beach Resort";
+let places = readStore(PLACES_KEY, null); // { fetched, list: [[normName, lat, lng]] }
+
+async function loadPlaces() {
+  if (!navigator.onLine || (places && Date.now() - places.fetched < 7 * 86400000)) return;
+  try {
+    const res = await fetch(`https://api.themeparks.wiki/v1/entity/${WDW_ID}/children`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = (data.children || [])
+      .filter((c) => c.location && c.location.latitude != null && c.location.longitude != null)
+      .map((c) => [normName(c.name || ""), c.location.latitude, c.location.longitude]);
+    if (list.length) { places = { fetched: Date.now(), list }; writeStore(PLACES_KEY, places); }
+  } catch {
+    // Directions fall back to the park.
   }
-  window.open("https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=" + encodeURIComponent(query), "_blank", "noopener");
 }
 
-function mapsQuery(name, location) {
-  const clean = name.replace(/\s*\(.*?\)/g, "").replace(/^(Breakfast|Lunch|Dinner) at /, "").replace(/ LL$/, "");
-  return `${clean}, ${location}, Walt Disney World`;
+// Roughly how far apart two points are, in km.
+const kmApart = (a, b) => Math.hypot((a[0] - b[0]) * 111, (a[1] - b[1]) * 98);
+
+function placeFor(name, location) {
+  const code = parkCode(location || "") || parkCode(name || "");
+  const park = code && PARK_PLACES[code];
+  const key = normName((name || "")
+    .replace(/\s*\(.*?\)/g, "").replace(/^(Breakfast|Lunch|Dinner) at /i, "").replace(/ LL$/, "").replace(/\s+Restaurant$/i, ""));
+  if (places && key.length > 3) {
+    // Same name first, then one name inside the other. Stay within the park when we know it.
+    const near = (p) => !park || kmApart([p[1], p[2]], park) < 2;
+    const hit = places.list.find((p) => p[0] === key && near(p))
+      || places.list.find((p) => p[0].length > 5 && (p[0].includes(key) || key.includes(p[0])) && near(p));
+    if (hit) return { lat: hit[1], lng: hit[2] };
+  }
+  if (park) return { query: park[2] };
+  if (/caribbean|resort/i.test(location || "")) return { query: RESORT_PLACE };
+  return { query: name };
+}
+
+function openDirections(name, location) {
+  const p = placeFor(name, location);
+  const dest = p.lat != null ? `${p.lat},${p.lng}` : p.query;
+  if (isApple()) {
+    window.location.href = "maps://?daddr=" + encodeURIComponent(dest) + "&dirflg=w";
+    return;
+  }
+  window.open("https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=" + encodeURIComponent(dest), "_blank", "noopener");
 }
 
 // Done checkbox, personal note and directions link. Marks and notes stay on this device.
@@ -612,7 +657,7 @@ function eventCard(ev, extra, live = true) {
     noteBox(ev.id),
   ]);
   return swipeCard(card, {
-    id: ev.id, name: ev.title, location: travel ? null : ev.location,
+    id: ev.id, name: ev.ride || ev.title, location: travel ? null : ev.location,
     onEdit: () => openEditor(ev.id),
   });
 }
@@ -663,6 +708,42 @@ function dayHeader(label, addDayId) {
   add.addEventListener("click", () => openEditor(null, addDayId));
   const day = plan.days.find((d) => d.id === addDayId);
   return el("h3", { class: "day-h" }, [el("span", { class: "day-label" }, label), forecastInline(day), add]);
+}
+
+// Tapping a date header folds its day away or opens it again. Days already over start
+// folded during the trip. Folded days are remembered on this phone.
+const FOLD_KEY = "disney-folded";
+function isFolded(day) {
+  const saved = readStore(FOLD_KEY, {})[day.id];
+  return saved != null ? saved : inTrip() && day.date < nowET().date;
+}
+function foldable(head, body, day, count) {
+  const label = head.querySelector(".day-label");
+  if (!label) return;
+  const mark = el("span", { class: "fold-mark", "aria-hidden": "true" }, "▾");
+  const more = el("span", { class: "fold-count" }, ` · ${count} item${count === 1 ? "" : "s"}`);
+  label.prepend(mark);
+  label.append(more);
+  head.classList.add("foldable");
+  head.setAttribute("role", "button");
+  head.setAttribute("tabindex", "0");
+  const show = (folded) => {
+    body.hidden = folded;
+    head.classList.toggle("folded", folded);
+    head.setAttribute("aria-expanded", String(!folded));
+  };
+  show(isFolded(day));
+  const toggle = (e) => {
+    if (e.target.closest("button, a")) return;
+    const folded = !body.hidden;
+    const all = readStore(FOLD_KEY, {});
+    all[day.id] = folded;
+    writeStore(FOLD_KEY, all);
+    show(folded);
+    if (!folded && head.getBoundingClientRect().top < 0) head.scrollIntoView({ block: "start" });
+  };
+  head.addEventListener("click", toggle);
+  head.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(e); } });
 }
 
 // Short hour, such as "2p" or "9a", for the forecast in a date header.
@@ -898,10 +979,14 @@ function renderItinerary() {
     shown += matches.length;
     // Headers and cards are direct children of one list, so each sticky header
     // stays pinned until the next day's header slides up over it.
-    days.append(dayHeader(d.label, d.id));
+    // A day's cards sit in their own box under the header so the day can fold up.
+    const body = el("div", { class: "day-body" });
+    const head = dayHeader(d.label, d.id);
+    days.append(head, body);
     const hours = hoursBlock(d);
-    if (hours) days.append(hours);
-    appendDayCards(days, d, matches);
+    if (hours) body.append(hours);
+    appendDayCards(body, d, matches);
+    foldable(head, body, d, matches.length);
   }
   if (!shown) days.append(el("p", { class: "meta" }, "Nothing matches these filters."));
   requestAnimationFrame(fitForecasts);
@@ -1018,7 +1103,7 @@ function renderResort() {
         noteBox(a.id),
       ]);
       list.append(swipeCard(card, {
-        id: a.id, name: (a.place || a.spot).split(",")[0], location: "Caribbean Beach Resort",
+        id: a.id, name: RESORT_PLACE, location: "Caribbean Beach Resort",
         onEdit: () => addResortActivity(day, a),
       }));
     }
@@ -2327,6 +2412,7 @@ function showPlan(decrypted, key) {
   }, 30000);
   setInterval(() => { if (!document.hidden) loadWaits(); }, 5 * 60000);
   loadFlights();
+  loadPlaces();
   setInterval(() => { if (!document.hidden) loadFlights(); }, FLIGHT_REFRESH);
 }
 
@@ -2399,6 +2485,10 @@ if (isApple()) {
   window.addEventListener("scroll", update, { passive: true });
   top.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
   update();
+}
+// No zooming: iOS Safari ignores the viewport setting, so block its pinch gestures too.
+for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 }
 document.getElementById("sync-status").addEventListener("click", () => { if (syncState === "error") flushEdits(); });
 wireKeypad();

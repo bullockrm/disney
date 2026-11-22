@@ -645,3 +645,16 @@ header .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #resort-list { display: flex; flex-direction: column; gap: 8px; }
 #resort-list .day-h { margin-top: 8px; }
 .event.resort-rec.past { opacity: 0.5; }
+
+/* No double-tap zoom; text fields at 16px so iOS doesn't zoom in when you type. */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+input, select, textarea { font-size: max(16px, 1em); }
+
+/* Foldable days on the itinerary. */
+.day-h.foldable { cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; }
+.fold-mark { display: inline-block; width: 1em; margin-right: 2px; transition: transform 0.15s ease; }
+.day-h.folded .fold-mark { transform: rotate(-90deg); }
+.fold-count { display: none; font-weight: 500; color: var(--muted); font-size: 0.85em; }
+.day-h.folded .fold-count { display: inline; }
+.day-body { display: contents; }
+.day-body[hidden] { display: none; }
