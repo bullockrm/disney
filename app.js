@@ -2049,6 +2049,41 @@ function field(label, input, cls) {
 
 // Opens the edit sheet for an existing item, or a blank one for a new item on a day.
 // preset fills in a new item, such as an attraction held down on the Attractions tab.
+// Typical average wait in minutes, from past Thanksgiving-week data (mostly 2021 to 2024).
+// Rides without an entry get no chart. Hourly shape is a typical park-day curve, scaled so
+// the day's average matches, so the chart is an estimate, not a forecast.
+const TYPICAL_WAITS = [
+  ["rise of the resistance", 154],
+  ["slinky dog dash", 121],
+  ["twilight zone tower of terror", 134],
+  ["runaway railway", 74],
+  ["smugglers run", 85],
+  ["toy story mania", 65],
+];
+const DAY_SHAPE = { 8: 0.35, 9: 0.6, 10: 0.85, 11: 1.0, 12: 1.1, 13: 1.15, 14: 1.15, 15: 1.1, 16: 1.05, 17: 1.0, 18: 0.95, 19: 0.9, 20: 0.8, 21: 0.6 };
+function typicalWaitChart(rideName) {
+  const key = normName(rideName || "");
+  const hit = TYPICAL_WAITS.find(([n]) => { const k = normName(n); return key.includes(k) || (k.includes(key) && key.length > 5); });
+  if (!hit) return null;
+  const hours = Object.keys(DAY_SHAPE).map(Number);
+  const mean = hours.reduce((a, h) => a + DAY_SHAPE[h], 0) / hours.length;
+  const bars = hours.map((h) => ({ h, mins: Math.round(hit[1] * DAY_SHAPE[h] / mean) }));
+  const max = Math.max(...bars.map((b) => b.mins));
+  const fmt = (h) => (h % 12 || 12) + (h < 12 ? "a" : "p");
+  return el("div", { class: "wait-chart" }, [
+    el("div", { class: "wait-chart-head" }, [
+      el("strong", {}, "Typical wait"),
+      el("span", { class: "meta" }, `avg about ${hit[1]} min, Thanksgiving week`),
+    ]),
+    el("div", { class: "wait-bars", role: "img", "aria-label": `Estimated waits for ${rideName} by hour` },
+      bars.map((b) => el("div", { class: "wait-col", title: `${fmt(b.h)}: about ${b.mins} min` }, [
+        el("div", { class: "wait-slot" }, el("div", { class: "wait-bar", style: `height:${Math.max(4, Math.round(b.mins / max * 100))}%` })),
+        el("span", { class: "wait-hour" }, b.h % 2 === 0 ? fmt(b.h) : ""),
+      ]))),
+    el("p", { class: "meta wait-note" }, "Estimate only. Check the live wait on the Attractions tab on the day."),
+  ]);
+}
+
 function openEditor(eventId, dayId, preset) {
   const sheet = document.getElementById("editor");
   const day = plan.days.find((d) => d.events.some((ev) => ev.id === eventId)) || plan.days.find((d) => d.id === dayId);
@@ -2113,6 +2148,13 @@ function openEditor(eventId, dayId, preset) {
   const otherField = field("Place", locOther);
   const kindField = field("Kind", kindSel);
   const pickField = field("Attraction", pickSel);
+  const waitBox = el("div", { class: "wait-box", hidden: "" });
+  const showWait = () => {
+    const chart = pickField.hidden || kindSel.value === "walk" ? null : typicalWaitChart(pickSel.value);
+    waitBox.replaceChildren(...(chart ? [chart] : []));
+    waitBox.hidden = !chart;
+  };
+  pickSel.addEventListener("change", showWait);
   const isFun = () => ["lightning", "attraction", "show"].includes(typeSel.value);
 
   // The list follows the type, kind and location, sorted A to Z.
@@ -2161,6 +2203,7 @@ function openEditor(eventId, dayId, preset) {
     pickField.hidden = !(isFun() || t === "dining");
     pickField.firstChild.textContent = t === "dining" ? "Restaurant" : (ATTR_KINDS.find(([k]) => k === kindSel.value) || [, "Attraction"])[1].replace(/s$/, "");
     fillPick();
+    showWait();
   };
   typeSel.addEventListener("change", () => {
     if (typeSel.value === "show") kindSel.value = "show";
@@ -2251,6 +2294,7 @@ function openEditor(eventId, dayId, preset) {
     el("div", { class: "ed-row" }, [field("Location", locSel), kindField]),
     otherField,
     pickField,
+    waitBox,
     field("Title", title),
     el("div", { class: "ed-row" }, [field("Starts", start), endField, secondField]),
     el("div", { class: "ed-field" }, [el("span", {}, "Groups"), el("div", { class: "ed-groups" }, groupBoxes)]),
