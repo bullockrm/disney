@@ -712,12 +712,16 @@ function dayHeader(label, addDayId) {
   return el("h3", { class: "day-h" }, [el("span", { class: "day-label" }, label), forecastInline(day), add]);
 }
 
-// Tapping a date header folds its day away or opens it again. Days already over start
-// folded during the trip. Folded days are remembered on this phone.
+// Tapping a date header folds its day away or opens it again. Days already over always
+// start folded during the trip. Only upcoming and today's days remember their state here.
 const FOLD_KEY = "disney-folded";
+function isPastDay(day) {
+  return inTrip() && day.date < nowET().date;
+}
 function isFolded(day) {
+  if (isPastDay(day)) return true;
   const saved = readStore(FOLD_KEY, {})[day.id];
-  return saved != null ? saved : inTrip() && day.date < nowET().date;
+  return saved != null ? saved : false;
 }
 function foldable(head, body, day, count) {
   const label = head.querySelector(".day-label");
@@ -738,9 +742,11 @@ function foldable(head, body, day, count) {
   const toggle = (e) => {
     if (e.target.closest("button, a")) return;
     const folded = !body.hidden;
-    const all = readStore(FOLD_KEY, {});
-    all[day.id] = folded;
-    writeStore(FOLD_KEY, all);
+    if (!isPastDay(day)) {
+      const all = readStore(FOLD_KEY, {});
+      all[day.id] = folded;
+      writeStore(FOLD_KEY, all);
+    }
     show(folded);
     if (!folded && head.getBoundingClientRect().top < 0) head.scrollIntoView({ block: "start" });
   };
